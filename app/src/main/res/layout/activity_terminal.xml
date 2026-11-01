@@ -143,6 +143,31 @@
                 style="@style/ExtraKeyButton"
                 android:text="CLR" />
 
+            <Button
+                android:id="@+id/btn_slash"
+                style="@style/ExtraKeyButton"
+                android:text="/" />
+
+            <Button
+                android:id="@+id/btn_backslash"
+                style="@style/ExtraKeyButton"
+                android:text="\\" />
+
+            <Button
+                android:id="@+id/btn_pipe"
+                style="@style/ExtraKeyButton"
+                android:text="|" />
+
+            <Button
+                android:id="@+id/btn_tilde"
+                style="@style/ExtraKeyButton"
+                android:text="~" />
+
+            <Button
+                android:id="@+id/btn_dash"
+                style="@style/ExtraKeyButton"
+                android:text="-" />
+
         </LinearLayout>
     </HorizontalScrollView>
 
