@@ -1,8 +1,12 @@
 package com.litebrowser
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
@@ -14,12 +18,14 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
+import java.io.File
 
 class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private lateinit var terminalView: TerminalView
     private var terminalSession: TerminalSession? = null
     private var sessionAttached = false
+    private lateinit var homeDir: String
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,51 +37,60 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             terminalView = findViewById(R.id.terminal_view)
             terminalView.setTerminalViewClient(this)
 
-            // دکمه Back
             findViewById<Button>(R.id.btn_back).setOnClickListener {
-                Logger.i("TerminalActivity", "Back button clicked")
                 finish()
             }
 
-            // دکمه کیبورد
             findViewById<Button>(R.id.btn_keyboard).setOnClickListener {
                 showKeyboard()
             }
 
-            // کلیک روی TerminalView هم کیبورد رو نشون بده
-            terminalView.setOnClickListener {
-                showKeyboard()
-            }
+            terminalView.setOnClickListener { showKeyboard() }
 
-            // صبر برای layout
             terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
                 override fun onLayoutChange(
                     v: View, left: Int, top: Int, right: Int, bottom: Int,
                     oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
                 ) {
-                    val w = right - left
-                    val h = bottom - top
-                    Logger.i("TerminalActivity", "onLayoutChange: ${w}x${h}")
-
-                    if (w > 0 && h > 0 && !sessionAttached) {
+                    if ((right - left) > 0 && (bottom - top) > 0 && !sessionAttached) {
                         sessionAttached = true
                         v.removeOnLayoutChangeListener(this)
-                        startTerminalSession(w, h)
+                        startTerminalSession(right - left, bottom - top)
                     }
                 }
             })
 
-            // fallback
-            Handler(Looper.getMainLooper()).postDelayed({
-                if (!sessionAttached && terminalView.width > 0 && terminalView.height > 0) {
-                    sessionAttached = true
-                    startTerminalSession(terminalView.width, terminalView.height)
-                }
-            }, 1000)
-
         } catch (e: Throwable) {
             Logger.e("TerminalActivity", "onCreate failed", e)
             throw e
+        }
+    }
+
+    private fun getStorageRoot(): String {
+        // تلاش برای پیدا کردن مسیر storage که قابل دسترسه
+        val candidates = listOf(
+            "/storage/emulated/0",
+            "/sdcard",
+            Environment.getExternalStorageDirectory().absolutePath
+        )
+        for (path in candidates) {
+            val f = File(path)
+            if (f.exists() && f.canRead() && f.canWrite()) {
+                Logger.i("TerminalActivity", "Using storage: $path (canRead=${f.canRead()}, canWrite=${f.canWrite()})")
+                return path
+            } else {
+                Logger.w("TerminalActivity", "Cannot use: $path (canRead=${f.canRead()}, canWrite=${f.canWrite()})")
+            }
+        }
+        // اگر هیچکدام نشد، فایل‌های اپ
+        return filesDir.absolutePath
+    }
+
+    private fun checkStoragePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -84,7 +99,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             terminalView.requestFocus()
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
-            Logger.i("TerminalActivity", "Keyboard requested")
         } catch (e: Exception) {
             Logger.e("TerminalActivity", "showKeyboard failed", e)
         }
@@ -93,27 +107,35 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     private fun startTerminalSession(viewWidth: Int, viewHeight: Int) {
         Logger.i("TerminalActivity", "startTerminalSession: ${viewWidth}x${viewHeight}")
         try {
-            val filesDirPath = filesDir.absolutePath
+            val hasStorage = checkStoragePermission()
+            Logger.i("TerminalActivity", "hasStorage permission: $hasStorage")
+
+            if (hasStorage) {
+                homeDir = getStorageRoot()
+            } else {
+                homeDir = filesDir.absolutePath
+                Logger.w("TerminalActivity", "No storage permission! Using: $homeDir")
+            }
 
             val envVars = arrayOf(
                 "PATH=/system/bin:/system/xbin:/system/bin",
-                "HOME=$filesDirPath",
+                "HOME=$homeDir",
                 "TERM=xterm-256color",
-                "LANG=en_US.UTF-8"
+                "LANG=en_US.UTF-8",
+                "PWD=$homeDir"
             )
 
             terminalView.setTextSize(30)
-            Logger.i("TerminalActivity", "setTextSize done")
 
             val session = TerminalSession(
                 "/system/bin/sh",
-                filesDirPath,
+                homeDir,
                 arrayOf("-l"),
                 envVars,
                 2000,
                 this
             )
-            Logger.i("TerminalActivity", "Session created, running=${session.isRunning}")
+            Logger.i("TerminalActivity", "Session created, running=${session.isRunning}, cwd=$homeDir")
 
             val cols = (viewWidth / 25).coerceAtLeast(20)
             val rows = (viewHeight / 50).coerceAtLeast(10)
@@ -122,20 +144,27 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             if (session.isRunning) {
                 terminalSession = session
                 terminalView.attachSession(session)
-                Logger.i("TerminalActivity", "attachSession done ✅")
 
-                // فوکوس + کیبورد
-                Handler(Looper.getMainLooper()).postDelayed({
-                    showKeyboard()
-                }, 300)
+                Handler(Looper.getMainLooper()).postDelayed({ showKeyboard() }, 300)
 
-                // تست
+                // نمایش پیام خوش‌آمد + رفتن به storage
                 Handler(Looper.getMainLooper()).postDelayed({
-                    val cmd = "echo 'LiteBrowser Terminal Ready!'\n"
+                    val cmd = buildString {
+                        append("clear\n")
+                        append("echo '============================================='\n")
+                        append("echo ' LiteBrowser Terminal'\n")
+                        append("echo '============================================='\n")
+                        if (!hasStorage) {
+                            append("echo '⚠️  Storage permission not granted!'\n")
+                            append("echo '    Go to Settings > Apps > Lite Browser >'\n")
+                            append("echo '    Permissions > All files access'\n")
+                        } else {
+                            append("echo '📁 Current directory: '\$(pwd)\n")
+                        }
+                        append("echo '============================================='\n")
+                    }
                     terminalSession?.write(cmd.toByteArray(), 0, cmd.length)
                 }, 500)
-            } else {
-                Logger.e("TerminalActivity", "Session not running!")
             }
         } catch (e: Throwable) {
             Logger.e("TerminalActivity", "startTerminalSession crashed", e)
@@ -143,8 +172,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     }
 
     override fun onBackPressed() {
-        Logger.i("TerminalActivity", "onBackPressed")
-        // اگر کیبورد باز است، اول ببند
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         if (imm.isAcceptingText) {
             imm.hideSoftInputFromWindow(terminalView.windowToken, 0)
@@ -154,10 +181,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     }
 
     override fun onDestroy() {
-        Logger.i("TerminalActivity", "onDestroy()")
-        try {
-            terminalSession?.finishIfRunning()
-        } catch (e: Exception) {}
+        try { terminalSession?.finishIfRunning() } catch (e: Exception) {}
         terminalSession = null
         super.onDestroy()
     }
@@ -165,10 +189,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     // ===== TerminalSessionClient =====
     override fun onTextChanged(session: TerminalSession?) {}
     override fun onTitleChanged(session: TerminalSession?) {}
-    override fun onSessionFinished(session: TerminalSession?) {
-        Logger.w("TerminalActivity", "Session finished")
-        terminalSession = null
-    }
+    override fun onSessionFinished(session: TerminalSession?) { terminalSession = null }
     override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
     override fun onPasteTextFromClipboard(session: TerminalSession?) {}
     override fun onBell(session: TerminalSession?) {}
@@ -203,7 +224,5 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean = false
-    override fun onEmulatorSet() {
-        Logger.i("TerminalActivity", "onEmulatorSet ✅")
-    }
+    override fun onEmulatorSet() { Logger.i("TerminalActivity", "onEmulatorSet ✅") }
 }

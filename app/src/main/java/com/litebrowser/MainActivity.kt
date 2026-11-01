@@ -1,15 +1,21 @@
 package com.litebrowser
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.view.KeyEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Toast
 
 class MainActivity : Activity() {
 
@@ -35,11 +41,9 @@ class MainActivity : Activity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 urlBar.setText(url ?: "")
-                Logger.i("Browser", "Page started: $url")
             }
         }
 
-        // Enter در نوار آدرس → load
         urlBar.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
                 loadUrlOrSearch(urlBar.text.toString().trim())
@@ -48,20 +52,45 @@ class MainActivity : Activity() {
             false
         }
 
-        // دکمه ترمینال
         btnTerminal.setOnClickListener {
-            Logger.i("Browser", "Opening TerminalActivity")
             startActivity(Intent(this, TerminalActivity::class.java))
         }
 
-        // دکمه reload
-        btnReload.setOnClickListener {
-            webView.reload()
-        }
+        btnReload.setOnClickListener { webView.reload() }
 
-        // شروع
         webView.loadUrl("https://www.google.com")
-        Logger.i("Browser", "Initial URL loaded")
+
+        // درخواست دسترسی storage
+        requestStoragePermission()
+    }
+
+    private fun requestStoragePermission() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // Android 11+ → MANAGE_EXTERNAL_STORAGE
+                if (!Environment.isExternalStorageManager()) {
+                    Logger.i("Browser", "Requesting MANAGE_EXTERNAL_STORAGE")
+                    Toast.makeText(this, "برای دسترسی به فایل‌ها، به تنظیمات بروید", Toast.LENGTH_LONG).show()
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.data = Uri.parse("package:$packageName")
+                    startActivity(intent)
+                }
+            } else {
+                // Android 10 و پایین‌تر
+                if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(
+                        arrayOf(
+                            Manifest.permission.READ_EXTERNAL_STORAGE,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        ),
+                        100
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Logger.e("Browser", "requestStoragePermission failed", e)
+        }
     }
 
     private fun loadUrlOrSearch(input: String) {
@@ -74,15 +103,10 @@ class MainActivity : Activity() {
                 "https://www.google.com/search?q=" + Uri.encode(url)
             }
         }
-        Logger.i("Browser", "Loading: $url")
         webView.loadUrl(url)
     }
 
     override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
+        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
     }
 }
