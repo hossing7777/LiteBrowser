@@ -16,7 +16,6 @@ object NativeInstaller {
             binDir.mkdirs()
             libDir.mkdirs()
 
-            // لیست فایل‌ها: (نام در assets, مقصد)
             val files = listOf(
                 "native/$ABI/pr-cli" to File(binDir, "pr-cli"),
                 "native/$ABI/busybox" to File(binDir, "busybox"),
@@ -26,10 +25,12 @@ object NativeInstaller {
 
             for ((assetPath, dest) in files) {
                 if (dest.exists() && dest.length() > 0) {
-                    Logger.i("NativeInstaller", "${dest.name} already installed")
+                    Logger.i("NativeInstaller", "${dest.name} already installed (${dest.length()} bytes)")
+                    dest.setExecutable(true)
                     continue
                 }
                 try {
+                    Logger.i("NativeInstaller", "Copying $assetPath → ${dest.absolutePath}")
                     context.assets.open(assetPath).use { input ->
                         FileOutputStream(dest).use { out ->
                             input.copyTo(out)
@@ -39,11 +40,17 @@ object NativeInstaller {
                     dest.setReadable(true)
                     Logger.i("NativeInstaller", "${dest.name} installed (${dest.length()} bytes)")
                 } catch (e: Exception) {
-                    Logger.e("NativeInstaller", "Failed to install ${dest.name}", e)
+                    Logger.e("NativeInstaller", "Failed to install ${dest.name}: ${e.message}", e)
                 }
             }
 
             Logger.i("NativeInstaller", "install complete")
+            
+            // لاگ نهایی برای چک
+            Logger.i("NativeInstaller", "pr-cli exists: ${File(binDir, "pr-cli").exists()}")
+            Logger.i("NativeInstaller", "busybox exists: ${File(binDir, "busybox").exists()}")
+            Logger.i("NativeInstaller", "libproot.so exists: ${File(libDir, "libproot.so").exists()}")
+            
         } catch (e: Exception) {
             Logger.e("NativeInstaller", "install failed", e)
         }

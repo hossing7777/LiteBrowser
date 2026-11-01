@@ -12,6 +12,9 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    aaptOptions {
+        noCompress "pr-cli", "busybox", "libproot.so", "libproot-loader.so"
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
