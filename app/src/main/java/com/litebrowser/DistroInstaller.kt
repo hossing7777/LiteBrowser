@@ -50,7 +50,6 @@ object DistroInstaller {
                             }
                             count++
                             if (count % 100 == 0) onProgress("Extracted $count files...")
-                            tar.closeEntry()
                             entry = tar.nextEntry
                         }
                     }

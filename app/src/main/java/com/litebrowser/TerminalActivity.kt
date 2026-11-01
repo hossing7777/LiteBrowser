@@ -189,7 +189,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
             if (session == null) {
                 Logger.e("TerminalActivity", "ProotLauncher.startSession returned null")
-                terminalView.mEmulator?.append("\r\n[ERROR] proot session failed\r\n".toByteArray(), 0, 0)
+                terminalView.mEmulator?.append("\r\n[ERROR] proot session failed\r\n".toByteArray(), 0)
                 return
             }
 
@@ -206,7 +206,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                         if (n > 0) {
                             val data = buffer.copyOf(n)
                             Handler(Looper.getMainLooper()).post {
-                                terminalView.mEmulator?.append(data, 0, n)
+                                terminalView.mEmulator?.append(data, n)
                                 terminalView.onScreenUpdated()
                             }
                         }
