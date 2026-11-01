@@ -46,9 +46,11 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
             findViewById<Button>(R.id.btn_back).setOnClickListener { finish() }
             findViewById<Button>(R.id.btn_keyboard).setOnClickListener { showKeyboard() }
+            
+            // کلیک روی ترمینال = انتقال فوکوس به ورودی مخفی و باز شدن کیبورد
             terminalView.setOnClickListener { showKeyboard() }
 
-            // TextWatcher برای کیبوردهای مجازی
+            // مدیریت تایپ با کیبوردهای مجازی
             hiddenInput.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -72,7 +74,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 }
             })
 
-            // KeyListener برای Backspace و Enter
+            // مدیریت دکمه‌های فیزیکی کیبورد
             hiddenInput.setOnKeyListener { _, keyCode, event ->
                 if (event.action == KeyEvent.ACTION_DOWN) {
                     when (keyCode) {
@@ -81,6 +83,13 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                         else -> false
                     }
                 } else false
+            }
+
+            // اطمینان از اینکه کلیک روی کیبورد، فوکوس رو از دست نمیده
+            hiddenInput.setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus) {
+                    hiddenInput.postDelayed({ showKeyboard() }, 100)
+                }
             }
 
             terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
@@ -105,6 +114,11 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         try {
             val bytes = text.toByteArray(Charsets.UTF_8)
             terminalSession?.write(bytes, 0, bytes.size)
+            // اسکرول به پایین بعد از هر ورودی
+            Handler(Looper.getMainLooper()).post {
+                terminalView.setTopRow(0)
+                terminalView.invalidate()
+            }
         } catch (e: Exception) {
             Logger.e("TerminalActivity", "sendToTerminal failed", e)
         }
@@ -187,6 +201,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         // اسکرول خودکار به پایین
         try {
             terminalView.setTopRow(0)
+            terminalView.invalidate()
         } catch (e: Exception) {}
     }
     override fun onTitleChanged(session: TerminalSession?) {}
@@ -210,11 +225,9 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         return try {
             currentFontSize = (currentFontSize * scale).coerceIn(10f, 80f)
             terminalView.setTextSize(currentFontSize.toInt())
-            // بعد از تغییر سایز، اسکرول به پایین
             terminalView.post { terminalView.setTopRow(0) }
             1.0f
         } catch (e: Exception) {
-            Logger.e("TerminalActivity", "onScale failed", e)
             1.0f
         }
     }
