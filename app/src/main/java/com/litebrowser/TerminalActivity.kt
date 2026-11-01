@@ -31,6 +31,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     private var sessionAttached = false
     private lateinit var homeDir: String
     private var isHandlingText = false
+    private var currentFontSize = 30f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,25 +42,19 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
             terminalView = findViewById(R.id.terminal_view)
             terminalView.setTerminalViewClient(this)
-            
-            // پیدا کردن EditText مخفی که در Layout اضافه کردیم
             hiddenInput = findViewById(R.id.hidden_input)
 
             findViewById<Button>(R.id.btn_back).setOnClickListener { finish() }
             findViewById<Button>(R.id.btn_keyboard).setOnClickListener { showKeyboard() }
-
-            // کلیک روی ترمینال = باز شدن کیبورد
             terminalView.setOnClickListener { showKeyboard() }
 
-            // مدیریت ورودی از EditText مخفی به ترمینال
+            // TextWatcher برای کیبوردهای مجازی
             hiddenInput.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                 override fun afterTextChanged(s: Editable?) {
                     if (isHandlingText || s == null || s.isEmpty()) return
                     val text = s.toString()
-                    
-                    // اگر Enter زده شد
                     if (text.contains("\n")) {
                         val parts = text.split("\n")
                         for (i in parts.indices) {
@@ -67,20 +62,17 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                             if (i < parts.size - 1) sendToTerminal("\r")
                         }
                     } else if (text.length == 1 && text[0] == '\u007F') {
-                        // Backspace
                         sendToTerminal("\u007F")
                     } else {
                         sendToTerminal(text)
                     }
-                    
-                    // پاک کردن EditText برای حرف بعدی
                     isHandlingText = true
                     hiddenInput.setText("")
                     isHandlingText = false
                 }
             })
 
-            // مدیریت Backspace و Enter با KeyListener (برای کیبوردهایی که TextWatcher رو دور می‌زنن)
+            // KeyListener برای Backspace و Enter
             hiddenInput.setOnKeyListener { _, keyCode, event ->
                 if (event.action == KeyEvent.ACTION_DOWN) {
                     when (keyCode) {
@@ -111,7 +103,8 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private fun sendToTerminal(text: String) {
         try {
-            terminalSession?.write(text.toByteArray(Charsets.UTF_8), 0, text.toByteArray(Charsets.UTF_8).size)
+            val bytes = text.toByteArray(Charsets.UTF_8)
+            terminalSession?.write(bytes, 0, bytes.size)
         } catch (e: Exception) {
             Logger.e("TerminalActivity", "sendToTerminal failed", e)
         }
@@ -152,7 +145,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "LANG=en_US.UTF-8"
             )
 
-            terminalView.setTextSize(30)
+            terminalView.setTextSize(currentFontSize.toInt())
 
             val session = TerminalSession(
                 "/system/bin/sh",
@@ -190,7 +183,12 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     }
 
     // ===== TerminalSessionClient =====
-    override fun onTextChanged(session: TerminalSession?) {}
+    override fun onTextChanged(session: TerminalSession?) {
+        // اسکرول خودکار به پایین
+        try {
+            terminalView.setTopRow(0)
+        } catch (e: Exception) {}
+    }
     override fun onTitleChanged(session: TerminalSession?) {}
     override fun onSessionFinished(session: TerminalSession?) { terminalSession = null }
     override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
@@ -208,10 +206,21 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun logStackTrace(tag: String?, e: Exception?) { Logger.e("Session/$tag", "exception", e) }
 
     // ===== TerminalViewClient =====
-    override fun onScale(scale: Float): Float = 1.0f
+    override fun onScale(scale: Float): Float {
+        return try {
+            currentFontSize = (currentFontSize * scale).coerceIn(10f, 80f)
+            terminalView.setTextSize(currentFontSize.toInt())
+            // بعد از تغییر سایز، اسکرول به پایین
+            terminalView.post { terminalView.setTopRow(0) }
+            1.0f
+        } catch (e: Exception) {
+            Logger.e("TerminalActivity", "onScale failed", e)
+            1.0f
+        }
+    }
     override fun onSingleTapUp(e: MotionEvent?) { showKeyboard() }
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
-    override fun shouldEnforceCharBasedInput(): Boolean = true // روش قدیمی، ولی حالا کاری نمی‌کنه
+    override fun shouldEnforceCharBasedInput(): Boolean = true
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
     override fun isTerminalViewSelected(): Boolean = true
     override fun copyModeChanged(copyMode: Boolean) {}
