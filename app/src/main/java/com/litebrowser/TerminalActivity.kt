@@ -212,7 +212,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun onScale(scale: Float): Float = 1.0f
     override fun onSingleTapUp(e: MotionEvent?) { showKeyboard() }
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
-    override fun shouldEnforceCharBasedInput(): Boolean = false
+    override fun shouldEnforceCharBasedInput(): Boolean = true
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
     override fun isTerminalViewSelected(): Boolean = true
     override fun copyModeChanged(copyMode: Boolean) {}
