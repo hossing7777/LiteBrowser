@@ -1,12 +1,15 @@
 package com.litebrowser
 
 import android.app.Activity
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.inputmethod.InputMethodManager
+import android.widget.Button
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
@@ -20,18 +23,31 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Logger.i("MainActivity", "onCreate() called")
+        Logger.i("TerminalActivity", "onCreate()")
 
         try {
             setContentView(R.layout.activity_terminal)
-            Logger.i("MainActivity", "Layout set")
 
             terminalView = findViewById(R.id.terminal_view)
-            Logger.i("MainActivity", "TerminalView found: $terminalView")
-
             terminalView.setTerminalViewClient(this)
 
-            // ⚠️ مهم: باید صبر کنیم تا View اندازه واقعی بگیره
+            // دکمه Back
+            findViewById<Button>(R.id.btn_back).setOnClickListener {
+                Logger.i("TerminalActivity", "Back button clicked")
+                finish()
+            }
+
+            // دکمه کیبورد
+            findViewById<Button>(R.id.btn_keyboard).setOnClickListener {
+                showKeyboard()
+            }
+
+            // کلیک روی TerminalView هم کیبورد رو نشون بده
+            terminalView.setOnClickListener {
+                showKeyboard()
+            }
+
+            // صبر برای layout
             terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
                 override fun onLayoutChange(
                     v: View, left: Int, top: Int, right: Int, bottom: Int,
@@ -39,7 +55,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 ) {
                     val w = right - left
                     val h = bottom - top
-                    Logger.i("MainActivity", "onLayoutChange: ${w}x${h}")
+                    Logger.i("TerminalActivity", "onLayoutChange: ${w}x${h}")
 
                     if (w > 0 && h > 0 && !sessionAttached) {
                         sessionAttached = true
@@ -49,30 +65,35 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 }
             })
 
-            // Fallback: اگر layout change نیومد (خیلی نادر)
+            // fallback
             Handler(Looper.getMainLooper()).postDelayed({
-                if (!sessionAttached) {
-                    val w = terminalView.width
-                    val h = terminalView.height
-                    Logger.w("MainActivity", "Fallback timer: ${w}x${h}")
-                    if (w > 0 && h > 0) {
-                        sessionAttached = true
-                        startTerminalSession(w, h)
-                    }
+                if (!sessionAttached && terminalView.width > 0 && terminalView.height > 0) {
+                    sessionAttached = true
+                    startTerminalSession(terminalView.width, terminalView.height)
                 }
             }, 1000)
 
         } catch (e: Throwable) {
-            Logger.e("MainActivity", "onCreate failed", e)
+            Logger.e("TerminalActivity", "onCreate failed", e)
             throw e
         }
     }
 
+    private fun showKeyboard() {
+        try {
+            terminalView.requestFocus()
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
+            Logger.i("TerminalActivity", "Keyboard requested")
+        } catch (e: Exception) {
+            Logger.e("TerminalActivity", "showKeyboard failed", e)
+        }
+    }
+
     private fun startTerminalSession(viewWidth: Int, viewHeight: Int) {
-        Logger.i("MainActivity", "startTerminalSession: ${viewWidth}x${viewHeight}")
+        Logger.i("TerminalActivity", "startTerminalSession: ${viewWidth}x${viewHeight}")
         try {
             val filesDirPath = filesDir.absolutePath
-            Logger.i("MainActivity", "filesDir = $filesDirPath")
 
             val envVars = arrayOf(
                 "PATH=/system/bin:/system/xbin:/system/bin",
@@ -81,14 +102,9 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "LANG=en_US.UTF-8"
             )
 
-            // ۱. اول textSize رو ست کن تا mRenderer ساخته بشه
-            // این مهم‌ترین نکته است!
-            Logger.i("MainActivity", "setTextSize(30)...")
             terminalView.setTextSize(30)
-            Logger.i("MainActivity", "setTextSize done")
+            Logger.i("TerminalActivity", "setTextSize done")
 
-            // ۲. حالا session رو بساز
-            Logger.i("MainActivity", "Creating TerminalSession...")
             val session = TerminalSession(
                 "/system/bin/sh",
                 filesDirPath,
@@ -97,67 +113,65 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 2000,
                 this
             )
-            Logger.i("MainActivity", "Session created: $session, running=${session.isRunning}")
+            Logger.i("TerminalActivity", "Session created, running=${session.isRunning}")
 
-            // ۳. اندازه بر اساس view
             val cols = (viewWidth / 25).coerceAtLeast(20)
             val rows = (viewHeight / 50).coerceAtLeast(10)
-            Logger.i("MainActivity", "updateSize($cols, $rows)")
             session.updateSize(cols, rows)
 
             if (session.isRunning) {
                 terminalSession = session
-
-                // ۴. الان attach کن — mRenderer آماده است
-                Logger.i("MainActivity", "attachSession()...")
                 terminalView.attachSession(session)
-                Logger.i("MainActivity", "attachSession returned ✅")
+                Logger.i("TerminalActivity", "attachSession done ✅")
 
-                // ۵. تست
+                // فوکوس + کیبورد
                 Handler(Looper.getMainLooper()).postDelayed({
-                    try {
-                        val cmd = "echo 'LiteBrowser Terminal Ready!'\n"
-                        terminalSession?.write(cmd.toByteArray(), 0, cmd.length)
-                        Logger.i("MainActivity", "Test command written")
-                    } catch (e: Exception) {
-                        Logger.e("MainActivity", "write failed", e)
-                    }
+                    showKeyboard()
+                }, 300)
+
+                // تست
+                Handler(Looper.getMainLooper()).postDelayed({
+                    val cmd = "echo 'LiteBrowser Terminal Ready!'\n"
+                    terminalSession?.write(cmd.toByteArray(), 0, cmd.length)
                 }, 500)
             } else {
-                Logger.e("MainActivity", "Session is NOT running!")
+                Logger.e("TerminalActivity", "Session not running!")
             }
         } catch (e: Throwable) {
-            Logger.e("MainActivity", "startTerminalSession crashed", e)
+            Logger.e("TerminalActivity", "startTerminalSession crashed", e)
+        }
+    }
+
+    override fun onBackPressed() {
+        Logger.i("TerminalActivity", "onBackPressed")
+        // اگر کیبورد باز است، اول ببند
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        if (imm.isAcceptingText) {
+            imm.hideSoftInputFromWindow(terminalView.windowToken, 0)
+        } else {
+            super.onBackPressed()
         }
     }
 
     override fun onDestroy() {
-        Logger.i("MainActivity", "onDestroy() called")
+        Logger.i("TerminalActivity", "onDestroy()")
         try {
             terminalSession?.finishIfRunning()
-        } catch (e: Exception) {
-            Logger.e("MainActivity", "onDestroy error", e)
-        }
+        } catch (e: Exception) {}
         terminalSession = null
         super.onDestroy()
     }
 
     // ===== TerminalSessionClient =====
-    override fun onTextChanged(session: TerminalSession?) {
-        Logger.d("SessionClient", "onTextChanged")
-    }
-    override fun onTitleChanged(session: TerminalSession?) {
-        Logger.i("SessionClient", "onTitleChanged: ${session?.title}")
-    }
+    override fun onTextChanged(session: TerminalSession?) {}
+    override fun onTitleChanged(session: TerminalSession?) {}
     override fun onSessionFinished(session: TerminalSession?) {
-        Logger.w("SessionClient", "onSessionFinished: exit=${session?.exitStatus}")
+        Logger.w("TerminalActivity", "Session finished")
         terminalSession = null
     }
     override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
     override fun onPasteTextFromClipboard(session: TerminalSession?) {}
-    override fun onBell(session: TerminalSession?) {
-        Logger.i("SessionClient", "onBell")
-    }
+    override fun onBell(session: TerminalSession?) {}
     override fun onColorsChanged(session: TerminalSession?) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
     override fun getTerminalCursorStyle(): Int? = null
@@ -175,7 +189,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     // ===== TerminalViewClient =====
     override fun onScale(scale: Float): Float = 1.0f
-    override fun onSingleTapUp(e: MotionEvent?) {}
+    override fun onSingleTapUp(e: MotionEvent?) { showKeyboard() }
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
     override fun shouldEnforceCharBasedInput(): Boolean = false
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
@@ -190,6 +204,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun readFnKey(): Boolean = false
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean = false
     override fun onEmulatorSet() {
-        Logger.i("ViewClient", "onEmulatorSet — emulator ready ✅")
+        Logger.i("TerminalActivity", "onEmulatorSet ✅")
     }
 }
