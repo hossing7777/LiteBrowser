@@ -9,11 +9,14 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
@@ -23,9 +26,11 @@ import java.io.File
 class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private lateinit var terminalView: TerminalView
+    private lateinit var hiddenInput: EditText
     private var terminalSession: TerminalSession? = null
     private var sessionAttached = false
     private lateinit var homeDir: String
+    private var isHandlingText = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,16 +41,55 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
             terminalView = findViewById(R.id.terminal_view)
             terminalView.setTerminalViewClient(this)
+            
+            // پیدا کردن EditText مخفی که در Layout اضافه کردیم
+            hiddenInput = findViewById(R.id.hidden_input)
 
-            findViewById<Button>(R.id.btn_back).setOnClickListener {
-                finish()
-            }
+            findViewById<Button>(R.id.btn_back).setOnClickListener { finish() }
+            findViewById<Button>(R.id.btn_keyboard).setOnClickListener { showKeyboard() }
 
-            findViewById<Button>(R.id.btn_keyboard).setOnClickListener {
-                showKeyboard()
-            }
-
+            // کلیک روی ترمینال = باز شدن کیبورد
             terminalView.setOnClickListener { showKeyboard() }
+
+            // مدیریت ورودی از EditText مخفی به ترمینال
+            hiddenInput.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    if (isHandlingText || s == null || s.isEmpty()) return
+                    val text = s.toString()
+                    
+                    // اگر Enter زده شد
+                    if (text.contains("\n")) {
+                        val parts = text.split("\n")
+                        for (i in parts.indices) {
+                            if (parts[i].isNotEmpty()) sendToTerminal(parts[i])
+                            if (i < parts.size - 1) sendToTerminal("\r")
+                        }
+                    } else if (text.length == 1 && text[0] == '\u007F') {
+                        // Backspace
+                        sendToTerminal("\u007F")
+                    } else {
+                        sendToTerminal(text)
+                    }
+                    
+                    // پاک کردن EditText برای حرف بعدی
+                    isHandlingText = true
+                    hiddenInput.setText("")
+                    isHandlingText = false
+                }
+            })
+
+            // مدیریت Backspace و Enter با KeyListener (برای کیبوردهایی که TextWatcher رو دور می‌زنن)
+            hiddenInput.setOnKeyListener { _, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_DEL -> { sendToTerminal("\u007F"); true }
+                        KeyEvent.KEYCODE_ENTER -> { sendToTerminal("\r"); true }
+                        else -> false
+                    }
+                } else false
+            }
 
             terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
                 override fun onLayoutChange(
@@ -62,67 +106,50 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
         } catch (e: Throwable) {
             Logger.e("TerminalActivity", "onCreate failed", e)
-            throw e
+        }
+    }
+
+    private fun sendToTerminal(text: String) {
+        try {
+            terminalSession?.write(text.toByteArray(Charsets.UTF_8), 0, text.toByteArray(Charsets.UTF_8).size)
+        } catch (e: Exception) {
+            Logger.e("TerminalActivity", "sendToTerminal failed", e)
         }
     }
 
     private fun getStorageRoot(): String {
-        // تلاش برای پیدا کردن مسیر storage که قابل دسترسه
-        val candidates = listOf(
-            "/storage/emulated/0",
-            "/sdcard",
-            Environment.getExternalStorageDirectory().absolutePath
-        )
+        val candidates = listOf("/storage/emulated/0", "/sdcard", Environment.getExternalStorageDirectory().absolutePath)
         for (path in candidates) {
             val f = File(path)
-            if (f.exists() && f.canRead() && f.canWrite()) {
-                Logger.i("TerminalActivity", "Using storage: $path (canRead=${f.canRead()}, canWrite=${f.canWrite()})")
-                return path
-            } else {
-                Logger.w("TerminalActivity", "Cannot use: $path (canRead=${f.canRead()}, canWrite=${f.canWrite()})")
-            }
+            if (f.exists() && f.canRead()) return path
         }
-        // اگر هیچکدام نشد، فایل‌های اپ
         return filesDir.absolutePath
     }
 
     private fun checkStoragePermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager()
+        else checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun showKeyboard() {
         try {
-            terminalView.requestFocus()
+            hiddenInput.requestFocus()
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
+            imm.showSoftInput(hiddenInput, InputMethodManager.SHOW_IMPLICIT)
         } catch (e: Exception) {
             Logger.e("TerminalActivity", "showKeyboard failed", e)
         }
     }
 
     private fun startTerminalSession(viewWidth: Int, viewHeight: Int) {
-        Logger.i("TerminalActivity", "startTerminalSession: ${viewWidth}x${viewHeight}")
         try {
-            val hasStorage = checkStoragePermission()
-            Logger.i("TerminalActivity", "hasStorage permission: $hasStorage")
-
-            if (hasStorage) {
-                homeDir = getStorageRoot()
-            } else {
-                homeDir = filesDir.absolutePath
-                Logger.w("TerminalActivity", "No storage permission! Using: $homeDir")
-            }
+            homeDir = if (checkStoragePermission()) getStorageRoot() else filesDir.absolutePath
 
             val envVars = arrayOf(
                 "PATH=/system/bin:/system/xbin:/system/bin",
                 "HOME=$homeDir",
                 "TERM=xterm-256color",
-                "LANG=en_US.UTF-8",
-                "PWD=$homeDir"
+                "LANG=en_US.UTF-8"
             )
 
             terminalView.setTextSize(30)
@@ -135,7 +162,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 2000,
                 this
             )
-            Logger.i("TerminalActivity", "Session created, running=${session.isRunning}, cwd=$homeDir")
 
             val cols = (viewWidth / 25).coerceAtLeast(20)
             val rows = (viewHeight / 50).coerceAtLeast(10)
@@ -144,27 +170,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             if (session.isRunning) {
                 terminalSession = session
                 terminalView.attachSession(session)
-
                 Handler(Looper.getMainLooper()).postDelayed({ showKeyboard() }, 300)
-
-                // نمایش پیام خوش‌آمد + رفتن به storage
-                Handler(Looper.getMainLooper()).postDelayed({
-                    val cmd = buildString {
-                        append("clear\n")
-                        append("echo '============================================='\n")
-                        append("echo ' LiteBrowser Terminal'\n")
-                        append("echo '============================================='\n")
-                        if (!hasStorage) {
-                            append("echo '⚠️  Storage permission not granted!'\n")
-                            append("echo '    Go to Settings > Apps > Lite Browser >'\n")
-                            append("echo '    Permissions > All files access'\n")
-                        } else {
-                            append("echo '📁 Current directory: '\$(pwd)\n")
-                        }
-                        append("echo '============================================='\n")
-                    }
-                    terminalSession?.write(cmd.toByteArray(), 0, cmd.length)
-                }, 500)
             }
         } catch (e: Throwable) {
             Logger.e("TerminalActivity", "startTerminalSession crashed", e)
@@ -173,11 +179,8 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     override fun onBackPressed() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        if (imm.isAcceptingText) {
-            imm.hideSoftInputFromWindow(terminalView.windowToken, 0)
-        } else {
-            super.onBackPressed()
-        }
+        if (imm.isAcceptingText) imm.hideSoftInputFromWindow(hiddenInput.windowToken, 0)
+        else super.onBackPressed()
     }
 
     override fun onDestroy() {
@@ -201,18 +204,14 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun logInfo(tag: String?, message: String?) { Logger.i("Session/$tag", message ?: "") }
     override fun logDebug(tag: String?, message: String?) { Logger.d("Session/$tag", message ?: "") }
     override fun logVerbose(tag: String?, message: String?) { Logger.d("Session/$tag", message ?: "") }
-    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
-        Logger.e("Session/$tag", message ?: "", e)
-    }
-    override fun logStackTrace(tag: String?, e: Exception?) {
-        Logger.e("Session/$tag", "exception", e)
-    }
+    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) { Logger.e("Session/$tag", message ?: "", e) }
+    override fun logStackTrace(tag: String?, e: Exception?) { Logger.e("Session/$tag", "exception", e) }
 
     // ===== TerminalViewClient =====
     override fun onScale(scale: Float): Float = 1.0f
     override fun onSingleTapUp(e: MotionEvent?) { showKeyboard() }
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
-    override fun shouldEnforceCharBasedInput(): Boolean = true
+    override fun shouldEnforceCharBasedInput(): Boolean = true // روش قدیمی، ولی حالا کاری نمی‌کنه
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
     override fun isTerminalViewSelected(): Boolean = true
     override fun copyModeChanged(copyMode: Boolean) {}
