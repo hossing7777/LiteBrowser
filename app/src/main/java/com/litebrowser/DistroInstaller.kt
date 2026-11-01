@@ -10,7 +10,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 object DistroInstaller {
 
     private const val DISTRO = "alpine"
-    private const val ASSET_NAME = "alpine-minirootfs-3.20.3-aarch64.tar.gz"
+    private const val ASSET_NAME = "alpine-rootfs.bin"
 
     fun isInstalled(context: Context): Boolean {
         val rootfs = File(context.filesDir, "usr/installed/$DISTRO")
