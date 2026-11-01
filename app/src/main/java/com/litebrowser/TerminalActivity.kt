@@ -75,6 +75,17 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             })
 
             // مدیریت دکمه‌های فیزیکی کیبورد
+            hiddenInput.setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO ||
+                    actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE ||
+                    actionId == android.view.inputmethod.EditorInfo.IME_ACTION_NEXT ||
+                    actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND ||
+                    actionId == android.view.inputmethod.EditorInfo.IME_NULL) {
+                    sendToTerminal("\r")
+                    true
+                } else false
+            }
+
             hiddenInput.setOnKeyListener { _, keyCode, event ->
                 if (event.action == KeyEvent.ACTION_DOWN) {
                     when (keyCode) {
