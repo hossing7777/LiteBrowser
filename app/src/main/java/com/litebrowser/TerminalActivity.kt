@@ -14,6 +14,7 @@ import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
@@ -32,6 +33,8 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     private lateinit var homeDir: String
     private var isHandlingText = false
     private var currentFontSize = 30f
+    private var ctrlPressed = false
+    private var altPressed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,11 +49,74 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
             findViewById<Button>(R.id.btn_back).setOnClickListener { finish() }
             findViewById<Button>(R.id.btn_keyboard).setOnClickListener { showKeyboard() }
-            
-            // کلیک روی ترمینال = انتقال فوکوس به ورودی مخفی و باز شدن کیبورد
             terminalView.setOnClickListener { showKeyboard() }
 
-            // مدیریت تایپ با کیبوردهای مجازی
+            // ==== دکمه‌های نوار اضافی ====
+
+            // ESC
+            findViewById<Button>(R.id.btn_esc).setOnClickListener {
+                sendToTerminal("\u001B")
+            }
+
+            // TAB (تکمیل خودکار)
+            findViewById<Button>(R.id.btn_tab).setOnClickListener {
+                sendToTerminal("\t")
+            }
+
+            // CTRL (toggle)
+            findViewById<Button>(R.id.btn_ctrl).apply {
+                setOnClickListener {
+                    ctrlPressed = !ctrlPressed
+                    alpha = if (ctrlPressed) 1.0f else 0.5f
+                    backgroundTintList = android.content.res.ColorStateList.valueOf(
+                        if (ctrlPressed) 0xFF0066CC.toInt() else 0xFF444444.toInt()
+                    )
+                    Logger.i("TerminalActivity", "CTRL pressed: $ctrlPressed")
+                }
+                alpha = 0.5f
+            }
+
+            // ALT (toggle)
+            findViewById<Button>(R.id.btn_alt).apply {
+                setOnClickListener {
+                    altPressed = !altPressed
+                    alpha = if (altPressed) 1.0f else 0.5f
+                    backgroundTintList = android.content.res.ColorStateList.valueOf(
+                        if (altPressed) 0xFF0066CC.toInt() else 0xFF444444.toInt()
+                    )
+                    Logger.i("TerminalActivity", "ALT pressed: $altPressed")
+                }
+                alpha = 0.5f
+            }
+
+            // Arrow keys
+            findViewById<Button>(R.id.btn_up).setOnClickListener { sendToTerminal("\u001B[A") }
+            findViewById<Button>(R.id.btn_down).setOnClickListener { sendToTerminal("\u001B[B") }
+            findViewById<Button>(R.id.btn_right).setOnClickListener { sendToTerminal("\u001B[C") }
+            findViewById<Button>(R.id.btn_left).setOnClickListener { sendToTerminal("\u001B[D") }
+
+            // HOME / END
+            findViewById<Button>(R.id.btn_home).setOnClickListener { sendToTerminal("\u001B[H") }
+            findViewById<Button>(R.id.btn_end).setOnClickListener { sendToTerminal("\u001B[F") }
+
+            // Ctrl+C
+            findViewById<Button>(R.id.btn_ctrl_c).setOnClickListener {
+                sendToTerminal("\u0003")
+                // Ctrl را غیرفعال کن
+                ctrlPressed = false
+                findViewById<Button>(R.id.btn_ctrl).apply {
+                    alpha = 0.5f
+                    backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF444444.toInt())
+                }
+            }
+
+            // Clear
+            findViewById<Button>(R.id.btn_clear).setOnClickListener {
+                sendToTerminal("clear\r")
+            }
+
+            // ==== مدیریت تایپ ====
+
             hiddenInput.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -74,13 +140,13 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 }
             })
 
-            // مدیریت دکمه‌های فیزیکی کیبورد
+            // Enter از کیبورد
             hiddenInput.setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO ||
-                    actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE ||
-                    actionId == android.view.inputmethod.EditorInfo.IME_ACTION_NEXT ||
-                    actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND ||
-                    actionId == android.view.inputmethod.EditorInfo.IME_NULL) {
+                if (actionId == EditorInfo.IME_ACTION_GO ||
+                    actionId == EditorInfo.IME_ACTION_DONE ||
+                    actionId == EditorInfo.IME_ACTION_NEXT ||
+                    actionId == EditorInfo.IME_ACTION_SEND ||
+                    actionId == EditorInfo.IME_NULL) {
                     sendToTerminal("\r")
                     true
                 } else false
@@ -96,7 +162,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 } else false
             }
 
-            // اطمینان از اینکه کلیک روی کیبورد، فوکوس رو از دست نمیده
             hiddenInput.setOnFocusChangeListener { _, hasFocus ->
                 if (!hasFocus) {
                     hiddenInput.postDelayed({ showKeyboard() }, 100)
@@ -123,9 +188,24 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private fun sendToTerminal(text: String) {
         try {
-            val bytes = text.toByteArray(Charsets.UTF_8)
+            // اگر Ctrl فعاله، حرف رو به کاراکتر کنترلی تبدیل کن
+            var finalText = text
+            if (ctrlPressed && text.length == 1) {
+                val c = text[0].lowercaseChar()
+                if (c in 'a'..'z') {
+                    finalText = (c - 'a' + 1).toChar().toString()
+                    // Ctrl بعد از یک بار استفاده غیرفعال بشه
+                    ctrlPressed = false
+                    findViewById<Button>(R.id.btn_ctrl).apply {
+                        alpha = 0.5f
+                        backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF444444.toInt())
+                    }
+                }
+            }
+
+            val bytes = finalText.toByteArray(Charsets.UTF_8)
             terminalSession?.write(bytes, 0, bytes.size)
-            // اسکرول به پایین بعد از هر ورودی
+
             Handler(Looper.getMainLooper()).post {
                 terminalView.setTopRow(0)
                 terminalView.invalidate()
@@ -209,7 +289,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     // ===== TerminalSessionClient =====
     override fun onTextChanged(session: TerminalSession?) {
-        // اسکرول خودکار به پایین
         try {
             terminalView.setTopRow(0)
             terminalView.invalidate()
@@ -251,8 +330,8 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun onKeyDown(keyCode: Int, e: KeyEvent?, session: TerminalSession?): Boolean = false
     override fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean = false
     override fun onLongPress(event: MotionEvent?): Boolean = false
-    override fun readControlKey(): Boolean = false
-    override fun readAltKey(): Boolean = false
+    override fun readControlKey(): Boolean = ctrlPressed
+    override fun readAltKey(): Boolean = altPressed
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean = false
