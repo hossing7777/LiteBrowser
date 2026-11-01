@@ -16,8 +16,12 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
@@ -42,6 +46,17 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
         try {
             setContentView(R.layout.activity_terminal)
+
+            // تشخیص ارتفاع کیبورد و هل دادن نوار دکمه‌ها به بالا
+            val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
+            ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
+                val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
+                val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.updatePadding(
+                    bottom = imeInsets.bottom.coerceAtLeast(systemBars.bottom)
+                )
+                insets
+            }
 
             terminalView = findViewById(R.id.terminal_view)
             terminalView.setTerminalViewClient(this)
@@ -290,8 +305,11 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     // ===== TerminalSessionClient =====
     override fun onTextChanged(session: TerminalSession?) {
         try {
-            terminalView.setTopRow(0)
-            terminalView.invalidate()
+            // اسکرول با تاخیر بسیار کم برای اطمینان از رندر شدن
+            Handler(Looper.getMainLooper()).postDelayed({
+                terminalView.setTopRow(0)
+                terminalView.invalidate()
+            }, 50)
         } catch (e: Exception) {}
     }
     override fun onTitleChanged(session: TerminalSession?) {}

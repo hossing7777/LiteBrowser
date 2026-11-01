@@ -28,4 +28,5 @@ android {
 }
 dependencies {
     implementation(project(":terminal-view"))
+    implementation("androidx.core:core-ktx:1.12.0")
 }
