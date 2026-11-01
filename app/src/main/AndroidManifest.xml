@@ -50,5 +50,6 @@
                 <data android:scheme="https" android:mimeType="text/html" />
             </intent-filter>
         </activity>
+        <activity android:name=".TerminalActivity" android:exported="false" />
     </application>
 </manifest>
