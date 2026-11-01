@@ -29,5 +29,6 @@ android {
 dependencies {
     implementation(project(":terminal-view"))
     implementation(project(":proot-engine"))
+    implementation("org.apache.commons:commons-compress:1.26.0")
     implementation("androidx.core:core-ktx:1.12.0")
 }

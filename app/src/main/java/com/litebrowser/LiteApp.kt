@@ -22,6 +22,19 @@ class LiteApp : Application() {
             Logger.e("App", "NativeInstaller failed", e)
         }
 
+        try {
+            if (!DistroInstaller.isInstalled(this)) {
+                Logger.i("App", "Alpine not installed yet, installing...")
+                DistroInstaller.install(this) { msg ->
+                    Logger.i("App", msg)
+                }
+            } else {
+                Logger.i("App", "Alpine already installed")
+            }
+        } catch (e: Exception) {
+            Logger.e("App", "DistroInstaller failed", e)
+        }
+
         Thread.setDefaultUncaughtExceptionHandler { thread, ex ->
             Logger.crash(thread, ex)
         }
