@@ -5,13 +5,14 @@
     android:orientation="vertical"
     android:background="#FFFFFF">
 
-    <!-- نوار آدرس -->
+    <!-- نوار آدرس + دکمه‌ها -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="8dp"
-        android:background="#F1F3F4">
+        android:background="#F1F3F4"
+        android:gravity="center_vertical">
 
         <EditText
             android:id="@+id/url_bar"
@@ -24,6 +25,30 @@
             android:singleLine="true"
             android:background="#FFFFFF"
             android:padding="10dp" />
+
+        <!-- دکمه ترمینال -->
+        <Button
+            android:id="@+id/btn_terminal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text=">_"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:minWidth="48dp"
+            android:paddingHorizontal="12dp" />
+
+        <!-- دکمه reload -->
+        <Button
+            android:id="@+id/btn_reload"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text="↻"
+            android:textSize="18sp"
+            android:minWidth="48dp"
+            android:paddingHorizontal="12dp" />
+
     </LinearLayout>
 
     <!-- WebView -->
