@@ -7,6 +7,9 @@ apply plugin: 'maven-publish'
 android {
     compileSdkVersion project.properties.compileSdkVersion.toInteger()
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
+    publishing {
+        singleVariant("release") { withSourcesJar() }
+    }
 
     defaultConfig {
         minSdkVersion project.properties.minSdkVersion.toInteger()
@@ -63,7 +66,6 @@ task sourceJar(type: Jar) {
 
 afterEvaluate {
     publishing {
-        singleVariant("release") { withSourcesJar() }
         publications {
             // Creates a Maven publication called "release".
             release(MavenPublication) {
