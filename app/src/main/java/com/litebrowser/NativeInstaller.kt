@@ -2,8 +2,12 @@ package com.litebrowser
 
 import android.content.Context
 import java.io.File
+import java.io.FileOutputStream
 
 object NativeInstaller {
+
+    private const val ABI = "arm64-v8a"
+
     fun install(context: Context) {
         try {
             val prefix = File(context.filesDir, "usr")
@@ -12,37 +16,30 @@ object NativeInstaller {
             binDir.mkdirs()
             libDir.mkdirs()
 
-            val nativeLibDir = context.applicationInfo.nativeLibraryDir
-            Logger.i("NativeInstaller", "nativeLibDir = $nativeLibDir")
+            // لیست فایل‌ها: (نام در assets, مقصد)
+            val files = listOf(
+                "native/$ABI/pr-cli" to File(binDir, "pr-cli"),
+                "native/$ABI/busybox" to File(binDir, "busybox"),
+                "native/$ABI/libproot.so" to File(libDir, "libproot.so"),
+                "native/$ABI/libproot-loader.so" to File(libDir, "libproot-loader.so")
+            )
 
-            // pr-cli
-            val prCliSrc = File(nativeLibDir, "libpr-cli.so")
-            val prCliDst = File(binDir, "pr-cli")
-            if (prCliSrc.exists()) {
-                prCliSrc.copyTo(prCliDst, overwrite = true)
-                prCliDst.setExecutable(true)
-                Logger.i("NativeInstaller", "pr-cli installed")
-            } else {
-                Logger.e("NativeInstaller", "pr-cli not found")
-            }
-
-            // busybox
-            val busyboxSrc = File(nativeLibDir, "libbusybox.so")
-            val busyboxDst = File(binDir, "busybox")
-            if (busyboxSrc.exists()) {
-                busyboxSrc.copyTo(busyboxDst, overwrite = true)
-                busyboxDst.setExecutable(true)
-                Logger.i("NativeInstaller", "busybox installed")
-            }
-
-            // proot و loader به lib/
-            listOf("libproot.so", "libproot-loader.so").forEach { name ->
-                val s = File(nativeLibDir, name)
-                val d = File(libDir, name)
-                if (s.exists()) {
-                    s.copyTo(d, overwrite = true)
-                    d.setExecutable(true)
-                    Logger.i("NativeInstaller", "$name installed")
+            for ((assetPath, dest) in files) {
+                if (dest.exists() && dest.length() > 0) {
+                    Logger.i("NativeInstaller", "${dest.name} already installed")
+                    continue
+                }
+                try {
+                    context.assets.open(assetPath).use { input ->
+                        FileOutputStream(dest).use { out ->
+                            input.copyTo(out)
+                        }
+                    }
+                    dest.setExecutable(true)
+                    dest.setReadable(true)
+                    Logger.i("NativeInstaller", "${dest.name} installed (${dest.length()} bytes)")
+                } catch (e: Exception) {
+                    Logger.e("NativeInstaller", "Failed to install ${dest.name}", e)
                 }
             }
 
