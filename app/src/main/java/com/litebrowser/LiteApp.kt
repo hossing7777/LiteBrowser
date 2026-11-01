@@ -1,10 +1,13 @@
 package com.litebrowser
 
 import android.app.Application
+import android.content.Context
+import android.net.ConnectivityManager
 import id.or.oo.pr.engine.ProotHost
 import java.io.File
 
 class LiteApp : Application(), ProotHost {
+
     override fun onCreate() {
         super.onCreate()
         Logger.reset()
@@ -24,15 +27,27 @@ class LiteApp : Application(), ProotHost {
         }
     }
 
-    // ===== پیاده‌سازی ProotHost =====
+    // ===== ProotHost implementation =====
+
     override val prefixDir: File
-        get() = File(filesDir, "usr")
+        get() = File(filesDir, "usr").also { it.mkdirs() }
 
     override val homeDir: File
-        get() = File(filesDir, "home")
+        get() = File(filesDir, "home").also { it.mkdirs() }
 
     override val cacheDir: File
-        get() = cacheDir
+        get() = super.getCacheDir()
 
-    // packageName از خود Application ارث‌بری می‌شود
+    override val packageName: String
+        get() = super.getPackageName()
+
+    override val dnsServers: List<String>
+        get() = try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = cm.activeNetwork ?: return emptyList()
+            val linkProps = cm.getLinkProperties(network) ?: return emptyList()
+            linkProps.dnsServers.mapNotNull { it.hostAddress }
+        } catch (e: Exception) {
+            emptyList()
+        }
 }
