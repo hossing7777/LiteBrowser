@@ -4,19 +4,19 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
-import java.io.File
 
 class MainActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private lateinit var terminalView: TerminalView
     private var terminalSession: TerminalSession? = null
+    private var sessionAttached = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,24 +30,49 @@ class MainActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             Logger.i("MainActivity", "TerminalView found: $terminalView")
 
             terminalView.setTerminalViewClient(this)
-            Logger.i("MainActivity", "TerminalViewClient set")
 
-            terminalView.post {
-                Logger.i("MainActivity", "post() callback triggered, attaching session")
-                startTerminalSession()
-            }
+            // ⚠️ مهم: باید صبر کنیم تا View اندازه واقعی بگیره
+            terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(
+                    v: View, left: Int, top: Int, right: Int, bottom: Int,
+                    oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+                ) {
+                    val w = right - left
+                    val h = bottom - top
+                    Logger.i("MainActivity", "onLayoutChange: ${w}x${h}")
+
+                    if (w > 0 && h > 0 && !sessionAttached) {
+                        sessionAttached = true
+                        v.removeOnLayoutChangeListener(this)
+                        startTerminalSession(w, h)
+                    }
+                }
+            })
+
+            // Fallback: اگر layout change نیومد (خیلی نادر)
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!sessionAttached) {
+                    val w = terminalView.width
+                    val h = terminalView.height
+                    Logger.w("MainActivity", "Fallback timer: ${w}x${h}")
+                    if (w > 0 && h > 0) {
+                        sessionAttached = true
+                        startTerminalSession(w, h)
+                    }
+                }
+            }, 1000)
+
         } catch (e: Throwable) {
             Logger.e("MainActivity", "onCreate failed", e)
             throw e
         }
     }
 
-    private fun startTerminalSession() {
-        Logger.i("MainActivity", "startTerminalSession() called")
+    private fun startTerminalSession(viewWidth: Int, viewHeight: Int) {
+        Logger.i("MainActivity", "startTerminalSession: ${viewWidth}x${viewHeight}")
         try {
             val filesDirPath = filesDir.absolutePath
             Logger.i("MainActivity", "filesDir = $filesDirPath")
-            Logger.i("MainActivity", "filesDir exists = ${File(filesDirPath).exists()}")
 
             val envVars = arrayOf(
                 "PATH=/system/bin:/system/xbin:/system/bin",
@@ -55,8 +80,14 @@ class MainActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "TERM=xterm-256color",
                 "LANG=en_US.UTF-8"
             )
-            Logger.i("MainActivity", "env = ${envVars.joinToString(", ")}")
 
+            // ۱. اول textSize رو ست کن تا mRenderer ساخته بشه
+            // این مهم‌ترین نکته است!
+            Logger.i("MainActivity", "setTextSize(30)...")
+            terminalView.setTextSize(30)
+            Logger.i("MainActivity", "setTextSize done")
+
+            // ۲. حالا session رو بساز
             Logger.i("MainActivity", "Creating TerminalSession...")
             val session = TerminalSession(
                 "/system/bin/sh",
@@ -66,27 +97,32 @@ class MainActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 2000,
                 this
             )
-            Logger.i("MainActivity", "TerminalSession created: $session, running=${session.isRunning}")
+            Logger.i("MainActivity", "Session created: $session, running=${session.isRunning}")
 
-            session.updateSize(80, 24)
-            Logger.i("MainActivity", "Session size updated to 80x24")
+            // ۳. اندازه بر اساس view
+            val cols = (viewWidth / 25).coerceAtLeast(20)
+            val rows = (viewHeight / 50).coerceAtLeast(10)
+            Logger.i("MainActivity", "updateSize($cols, $rows)")
+            session.updateSize(cols, rows)
 
             if (session.isRunning) {
                 terminalSession = session
-                Logger.i("MainActivity", "Calling terminalView.attachSession...")
-                terminalView.attachSession(session)
-                Logger.i("MainActivity", "attachSession returned")
 
+                // ۴. الان attach کن — mRenderer آماده است
+                Logger.i("MainActivity", "attachSession()...")
+                terminalView.attachSession(session)
+                Logger.i("MainActivity", "attachSession returned ✅")
+
+                // ۵. تست
                 Handler(Looper.getMainLooper()).postDelayed({
                     try {
                         val cmd = "echo 'LiteBrowser Terminal Ready!'\n"
-                        Logger.i("MainActivity", "Writing test command: $cmd")
                         terminalSession?.write(cmd.toByteArray(), 0, cmd.length)
                         Logger.i("MainActivity", "Test command written")
                     } catch (e: Exception) {
                         Logger.e("MainActivity", "write failed", e)
                     }
-                }, 1000)
+                }, 500)
             } else {
                 Logger.e("MainActivity", "Session is NOT running!")
             }
@@ -99,7 +135,6 @@ class MainActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         Logger.i("MainActivity", "onDestroy() called")
         try {
             terminalSession?.finishIfRunning()
-            Logger.i("MainActivity", "Session finishIfRunning called")
         } catch (e: Exception) {
             Logger.e("MainActivity", "onDestroy error", e)
         }
@@ -115,24 +150,16 @@ class MainActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         Logger.i("SessionClient", "onTitleChanged: ${session?.title}")
     }
     override fun onSessionFinished(session: TerminalSession?) {
-        Logger.w("SessionClient", "onSessionFinished: exitStatus=${session?.exitStatus}")
+        Logger.w("SessionClient", "onSessionFinished: exit=${session?.exitStatus}")
         terminalSession = null
     }
-    override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {
-        Logger.i("SessionClient", "onCopyTextToClipboard: ${text?.take(50)}")
-    }
-    override fun onPasteTextFromClipboard(session: TerminalSession?) {
-        Logger.i("SessionClient", "onPasteTextFromClipboard")
-    }
+    override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
+    override fun onPasteTextFromClipboard(session: TerminalSession?) {}
     override fun onBell(session: TerminalSession?) {
         Logger.i("SessionClient", "onBell")
     }
-    override fun onColorsChanged(session: TerminalSession?) {
-        Logger.d("SessionClient", "onColorsChanged")
-    }
-    override fun onTerminalCursorStateChange(state: Boolean) {
-        Logger.d("SessionClient", "onTerminalCursorStateChange: $state")
-    }
+    override fun onColorsChanged(session: TerminalSession?) {}
+    override fun onTerminalCursorStateChange(state: Boolean) {}
     override fun getTerminalCursorStyle(): Int? = null
     override fun logError(tag: String?, message: String?) { Logger.e("Session/$tag", message ?: "") }
     override fun logWarn(tag: String?, message: String?) { Logger.w("Session/$tag", message ?: "") }
@@ -147,35 +174,22 @@ class MainActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     }
 
     // ===== TerminalViewClient =====
-    override fun onScale(scale: Float): Float {
-        Logger.d("ViewClient", "onScale: $scale")
-        return 1.0f
-    }
-    override fun onSingleTapUp(e: MotionEvent?) {
-        Logger.d("ViewClient", "onSingleTapUp")
-    }
+    override fun onScale(scale: Float): Float = 1.0f
+    override fun onSingleTapUp(e: MotionEvent?) {}
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
     override fun shouldEnforceCharBasedInput(): Boolean = false
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
     override fun isTerminalViewSelected(): Boolean = true
-    override fun copyModeChanged(copyMode: Boolean) {
-        Logger.d("ViewClient", "copyModeChanged: $copyMode")
-    }
-    override fun onKeyDown(keyCode: Int, e: KeyEvent?, session: TerminalSession?): Boolean {
-        Logger.d("ViewClient", "onKeyDown: $keyCode")
-        return false
-    }
+    override fun copyModeChanged(copyMode: Boolean) {}
+    override fun onKeyDown(keyCode: Int, e: KeyEvent?, session: TerminalSession?): Boolean = false
     override fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean = false
     override fun onLongPress(event: MotionEvent?): Boolean = false
     override fun readControlKey(): Boolean = false
     override fun readAltKey(): Boolean = false
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
-    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean {
-        Logger.d("ViewClient", "onCodePoint: $codePoint, ctrl=$ctrlDown")
-        return false
-    }
+    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean = false
     override fun onEmulatorSet() {
-        Logger.i("ViewClient", "onEmulatorSet called - emulator ready")
+        Logger.i("ViewClient", "onEmulatorSet — emulator ready ✅")
     }
 }
