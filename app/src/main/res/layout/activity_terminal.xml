@@ -5,7 +5,7 @@
     android:orientation="vertical"
     android:background="#000000">
 
-    <!-- نوار بالا (Back + Title + Keyboard) -->
+    <!-- نوار عنوان (بالا) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -48,8 +48,38 @@
 
     </LinearLayout>
 
-    <!-- ======= نوار دکمه‌های اضافی (بالای ترمینال) ======= -->
+    <!-- ناحیه ترمینال (پر می‌کنه) -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <com.termux.view.TerminalView
+            android:id="@+id/terminal_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#000000"
+            android:focusable="true"
+            android:focusableInTouchMode="true" />
+
+        <EditText
+            android:id="@+id/hidden_input"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:alpha="0"
+            android:background="@android:color/transparent"
+            android:inputType="text"
+            android:imeOptions="actionGo|flagNoExtractUi|flagNoFullscreen"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:singleLine="true"
+            android:cursorVisible="false" />
+
+    </FrameLayout>
+
+    <!-- نوار دکمه‌های اضافی (پایین، درست بالای کیبورد) -->
     <HorizontalScrollView
+        android:id="@+id/extra_keys_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="#2b2b2b"
@@ -124,34 +154,5 @@
 
         </LinearLayout>
     </HorizontalScrollView>
-
-    <!-- ناحیه ترمینال -->
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <com.termux.view.TerminalView
-            android:id="@+id/terminal_view"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="#000000"
-            android:focusable="true"
-            android:focusableInTouchMode="true" />
-
-        <EditText
-            android:id="@+id/hidden_input"
-            android:layout_width="1dp"
-            android:layout_height="1dp"
-            android:alpha="0"
-            android:background="@android:color/transparent"
-            android:inputType="text"
-            android:imeOptions="actionGo|flagNoExtractUi|flagNoFullscreen"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:singleLine="true"
-            android:cursorVisible="false" />
-
-    </FrameLayout>
 
 </LinearLayout>
