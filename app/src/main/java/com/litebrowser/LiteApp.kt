@@ -42,12 +42,14 @@ class LiteApp : Application(), ProotHost {
         get() = super.getPackageName()
 
     override val dnsServers: List<String>
-        get() = try {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val network = cm.activeNetwork ?: return emptyList()
-            val linkProps = cm.getLinkProperties(network) ?: return emptyList()
-            linkProps.dnsServers.mapNotNull { it.hostAddress }
-        } catch (e: Exception) {
-            emptyList()
+        get() {
+            return try {
+                val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                val network = cm.activeNetwork ?: return emptyList()
+                val linkProps = cm.getLinkProperties(network) ?: return emptyList()
+                linkProps.dnsServers.mapNotNull { it.hostAddress }
+            } catch (e: Exception) {
+                emptyList()
+            }
         }
 }
