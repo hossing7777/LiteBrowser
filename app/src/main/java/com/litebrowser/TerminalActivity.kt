@@ -22,19 +22,21 @@ import androidx.core.view.updatePadding
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import id.or.oo.pr.engine.ProotLauncher
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import java.io.File
+import kotlin.concurrent.thread
 
 class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private lateinit var terminalView: TerminalView
     private lateinit var hiddenInput: EditText
-    private var terminalSession: TerminalSession? = null
+    private var prootSession: ProotLauncher.Session? = null
+    private var readerThread: Thread? = null
     private var sessionAttached = false
-    private lateinit var homeDir: String
     private var isHandlingText = false
     private var currentFontSize = 30f
     private var ctrlPressed = false
@@ -47,14 +49,11 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         try {
             setContentView(R.layout.activity_terminal)
 
-            // تشخیص ارتفاع کیبورد و هل دادن نوار دکمه‌ها به بالا
             val rootLayout = findViewById<LinearLayout>(R.id.root_layout)
             ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
                 val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
                 val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-                view.updatePadding(
-                    bottom = imeInsets.bottom.coerceAtLeast(systemBars.bottom)
-                )
+                view.updatePadding(bottom = imeInsets.bottom.coerceAtLeast(systemBars.bottom))
                 insets
             }
 
@@ -67,70 +66,43 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             terminalView.setOnClickListener { showKeyboard() }
 
             // ==== دکمه‌های نوار اضافی ====
-
-            // ESC
-            findViewById<Button>(R.id.btn_esc).setOnClickListener {
-                sendToTerminal("\u001B")
-            }
-
-            // TAB (تکمیل خودکار)
-            findViewById<Button>(R.id.btn_tab).setOnClickListener {
-                sendToTerminal("\t")
-            }
-
-            // CTRL (toggle)
+            findViewById<Button>(R.id.btn_esc).setOnClickListener { sendToTerminal("\u001B") }
+            findViewById<Button>(R.id.btn_tab).setOnClickListener { sendToTerminal("\t") }
             findViewById<Button>(R.id.btn_ctrl).apply {
+                alpha = 0.5f
                 setOnClickListener {
                     ctrlPressed = !ctrlPressed
                     alpha = if (ctrlPressed) 1.0f else 0.5f
                     backgroundTintList = android.content.res.ColorStateList.valueOf(
                         if (ctrlPressed) 0xFF0066CC.toInt() else 0xFF444444.toInt()
                     )
-                    Logger.i("TerminalActivity", "CTRL pressed: $ctrlPressed")
                 }
-                alpha = 0.5f
             }
-
-            // ALT (toggle)
             findViewById<Button>(R.id.btn_alt).apply {
+                alpha = 0.5f
                 setOnClickListener {
                     altPressed = !altPressed
                     alpha = if (altPressed) 1.0f else 0.5f
                     backgroundTintList = android.content.res.ColorStateList.valueOf(
                         if (altPressed) 0xFF0066CC.toInt() else 0xFF444444.toInt()
                     )
-                    Logger.i("TerminalActivity", "ALT pressed: $altPressed")
                 }
-                alpha = 0.5f
             }
-
-            // Arrow keys
             findViewById<Button>(R.id.btn_up).setOnClickListener { sendToTerminal("\u001B[A") }
             findViewById<Button>(R.id.btn_down).setOnClickListener { sendToTerminal("\u001B[B") }
             findViewById<Button>(R.id.btn_right).setOnClickListener { sendToTerminal("\u001B[C") }
             findViewById<Button>(R.id.btn_left).setOnClickListener { sendToTerminal("\u001B[D") }
-
-            // HOME / END
             findViewById<Button>(R.id.btn_home).setOnClickListener { sendToTerminal("\u001B[H") }
             findViewById<Button>(R.id.btn_end).setOnClickListener { sendToTerminal("\u001B[F") }
-
-            // Ctrl+C
             findViewById<Button>(R.id.btn_ctrl_c).setOnClickListener {
                 sendToTerminal("\u0003")
-                // Ctrl را غیرفعال کن
                 ctrlPressed = false
                 findViewById<Button>(R.id.btn_ctrl).apply {
                     alpha = 0.5f
                     backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF444444.toInt())
                 }
             }
-
-            // Clear
-            findViewById<Button>(R.id.btn_clear).setOnClickListener {
-                sendToTerminal("clear\r")
-            }
-
-            // character keys
+            findViewById<Button>(R.id.btn_clear).setOnClickListener { sendToTerminal("clear\r") }
             findViewById<Button>(R.id.btn_slash).setOnClickListener { sendToTerminal("/") }
             findViewById<Button>(R.id.btn_pipe).setOnClickListener { sendToTerminal("|") }
             findViewById<Button>(R.id.btn_tilde).setOnClickListener { sendToTerminal("~") }
@@ -138,7 +110,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             findViewById<Button>(R.id.btn_backslash).setOnClickListener { sendToTerminal("\\\\") }
 
             // ==== مدیریت تایپ ====
-
             hiddenInput.addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -162,12 +133,9 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 }
             })
 
-            // Enter از کیبورد
             hiddenInput.setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_GO ||
-                    actionId == EditorInfo.IME_ACTION_DONE ||
-                    actionId == EditorInfo.IME_ACTION_NEXT ||
-                    actionId == EditorInfo.IME_ACTION_SEND ||
+                if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE ||
+                    actionId == EditorInfo.IME_ACTION_NEXT || actionId == EditorInfo.IME_ACTION_SEND ||
                     actionId == EditorInfo.IME_NULL) {
                     sendToTerminal("\r")
                     true
@@ -185,9 +153,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             }
 
             hiddenInput.setOnFocusChangeListener { _, hasFocus ->
-                if (!hasFocus) {
-                    hiddenInput.postDelayed({ showKeyboard() }, 100)
-                }
+                if (!hasFocus) hiddenInput.postDelayed({ showKeyboard() }, 100)
             }
 
             terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
@@ -198,7 +164,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                     if ((right - left) > 0 && (bottom - top) > 0 && !sessionAttached) {
                         sessionAttached = true
                         v.removeOnLayoutChangeListener(this)
-                        startTerminalSession(right - left, bottom - top)
+                        startProotSession(right - left, bottom - top)
                     }
                 }
             })
@@ -208,15 +174,63 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         }
     }
 
+    private fun startProotSession(viewWidth: Int, viewHeight: Int) {
+        try {
+            val app = application as LiteApp
+            val prootLauncher = ProotLauncher(app.getProotHost())
+
+            terminalView.setTextSize(currentFontSize.toInt())
+
+            val cols = (viewWidth / 25).coerceAtLeast(20)
+            val rows = (viewHeight / 50).coerceAtLeast(10)
+
+            Logger.i("TerminalActivity", "Starting proot session: alpine ${rows}x${cols}")
+            val session = prootLauncher.startSession("alpine", rows = rows, cols = cols)
+
+            if (session == null) {
+                Logger.e("TerminalActivity", "ProotLauncher.startSession returned null")
+                terminalView.mEmulator?.append("\r\n[ERROR] proot session failed\r\n".toByteArray(), 0, 0)
+                return
+            }
+
+            Logger.i("TerminalActivity", "Proot session started, masterFd=${session.masterFd}, pid=${session.pid}")
+            prootSession = session
+
+            // اتصال: یک thread که از masterFd می‌خونه و به TerminalView می‌فرسته
+            readerThread = thread(name = "proot-reader", isDaemon = true) {
+                val buffer = ByteArray(4096)
+                while (!session.closed) {
+                    try {
+                        val n = session.read(buffer, 0, buffer.size)
+                        if (n < 0) break
+                        if (n > 0) {
+                            val data = buffer.copyOf(n)
+                            Handler(Looper.getMainLooper()).post {
+                                terminalView.mEmulator?.append(data, 0, n)
+                                terminalView.onScreenUpdated()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Logger.e("TerminalActivity", "reader error", e)
+                        break
+                    }
+                }
+            }
+
+            Handler(Looper.getMainLooper()).postDelayed({ showKeyboard() }, 300)
+
+        } catch (e: Throwable) {
+            Logger.e("TerminalActivity", "startProotSession crashed", e)
+        }
+    }
+
     private fun sendToTerminal(text: String) {
         try {
-            // اگر Ctrl فعاله، حرف رو به کاراکتر کنترلی تبدیل کن
             var finalText = text
             if (ctrlPressed && text.length == 1) {
                 val c = text[0].lowercaseChar()
                 if (c in 'a'..'z') {
                     finalText = (c - 'a' + 1).toChar().toString()
-                    // Ctrl بعد از یک بار استفاده غیرفعال بشه
                     ctrlPressed = false
                     findViewById<Button>(R.id.btn_ctrl).apply {
                         alpha = 0.5f
@@ -224,31 +238,11 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                     }
                 }
             }
-
             val bytes = finalText.toByteArray(Charsets.UTF_8)
-            terminalSession?.write(bytes, 0, bytes.size)
-
-            Handler(Looper.getMainLooper()).post {
-                terminalView.setTopRow(0)
-                terminalView.invalidate()
-            }
+            prootSession?.write(bytes)
         } catch (e: Exception) {
             Logger.e("TerminalActivity", "sendToTerminal failed", e)
         }
-    }
-
-    private fun getStorageRoot(): String {
-        val candidates = listOf("/storage/emulated/0", "/sdcard", Environment.getExternalStorageDirectory().absolutePath)
-        for (path in candidates) {
-            val f = File(path)
-            if (f.exists() && f.canRead()) return path
-        }
-        return filesDir.absolutePath
-    }
-
-    private fun checkStoragePermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager()
-        else checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun showKeyboard() {
@@ -261,42 +255,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         }
     }
 
-    private fun startTerminalSession(viewWidth: Int, viewHeight: Int) {
-        try {
-            homeDir = if (checkStoragePermission()) getStorageRoot() else filesDir.absolutePath
-
-            val envVars = arrayOf(
-                "PATH=/system/bin:/system/xbin:/system/bin",
-                "HOME=$homeDir",
-                "TERM=xterm-256color",
-                "LANG=en_US.UTF-8"
-            )
-
-            terminalView.setTextSize(currentFontSize.toInt())
-
-            val session = TerminalSession(
-                "/system/bin/sh",
-                homeDir,
-                arrayOf("-l"),
-                envVars,
-                2000,
-                this
-            )
-
-            val cols = (viewWidth / 25).coerceAtLeast(20)
-            val rows = (viewHeight / 50).coerceAtLeast(10)
-            session.updateSize(cols, rows)
-
-            if (session.isRunning) {
-                terminalSession = session
-                terminalView.attachSession(session)
-                Handler(Looper.getMainLooper()).postDelayed({ showKeyboard() }, 300)
-            }
-        } catch (e: Throwable) {
-            Logger.e("TerminalActivity", "startTerminalSession crashed", e)
-        }
-    }
-
     override fun onBackPressed() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         if (imm.isAcceptingText) imm.hideSoftInputFromWindow(hiddenInput.windowToken, 0)
@@ -304,23 +262,17 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     }
 
     override fun onDestroy() {
-        try { terminalSession?.finishIfRunning() } catch (e: Exception) {}
-        terminalSession = null
+        Logger.i("TerminalActivity", "onDestroy()")
+        try { prootSession?.close() } catch (e: Exception) {}
+        prootSession = null
+        readerThread = null
         super.onDestroy()
     }
 
-    // ===== TerminalSessionClient =====
-    override fun onTextChanged(session: TerminalSession?) {
-        try {
-            // اسکرول با تاخیر بسیار کم برای اطمینان از رندر شدن
-            Handler(Looper.getMainLooper()).postDelayed({
-                terminalView.setTopRow(0)
-                terminalView.invalidate()
-            }, 50)
-        } catch (e: Exception) {}
-    }
+    // ===== TerminalSessionClient (stub - چون TerminalSession نداریم) =====
+    override fun onTextChanged(session: TerminalSession?) {}
     override fun onTitleChanged(session: TerminalSession?) {}
-    override fun onSessionFinished(session: TerminalSession?) { terminalSession = null }
+    override fun onSessionFinished(session: TerminalSession?) {}
     override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
     override fun onPasteTextFromClipboard(session: TerminalSession?) {}
     override fun onBell(session: TerminalSession?) {}
@@ -342,9 +294,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             terminalView.setTextSize(currentFontSize.toInt())
             terminalView.post { terminalView.setTopRow(0) }
             1.0f
-        } catch (e: Exception) {
-            1.0f
-        }
+        } catch (e: Exception) { 1.0f }
     }
     override fun onSingleTapUp(e: MotionEvent?) { showKeyboard() }
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
@@ -360,5 +310,5 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean = false
-    override fun onEmulatorSet() { Logger.i("TerminalActivity", "onEmulatorSet ✅") }
+    override fun onEmulatorSet() { Logger.i("TerminalActivity", "onEmulatorSet") }
 }
