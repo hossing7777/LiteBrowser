@@ -6,7 +6,7 @@ import android.net.ConnectivityManager
 import id.or.oo.pr.engine.ProotHost
 import java.io.File
 
-class LiteApp : Application(), ProotHost {
+class LiteApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
@@ -27,29 +27,34 @@ class LiteApp : Application(), ProotHost {
         }
     }
 
-    // ===== ProotHost implementation =====
+    /**
+     * پیاده‌سازی ProotHost برای این Application.
+     * به جای اینکه LiteApp مستقیماً ProotHost رو پیاده‌سازی کنه (که با Application تداخل داره)،
+     * یک adapter جداگانه می‌سازیم.
+     */
+    fun getProotHost(): ProotHost = object : ProotHost {
+        override val prefixDir: File
+            get() = File(filesDir, "usr").also { it.mkdirs() }
 
-    override val prefixDir: File
-        get() = File(filesDir, "usr").also { it.mkdirs() }
+        override val homeDir: File
+            get() = File(filesDir, "home").also { it.mkdirs() }
 
-    override val homeDir: File
-        get() = File(filesDir, "home").also { it.mkdirs() }
+        override val cacheDir: File
+            get() = this@LiteApp.cacheDir
 
-    override val cacheDir: File
-        get() = super.getCacheDir()
+        override val packageName: String
+            get() = this@LiteApp.packageName
 
-    override val packageName: String
-        get() = super.getPackageName()
-
-    override val dnsServers: List<String>
-        get() {
-            return try {
-                val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-                val network = cm.activeNetwork ?: return emptyList()
-                val linkProps = cm.getLinkProperties(network) ?: return emptyList()
-                linkProps.dnsServers.mapNotNull { it.hostAddress }
-            } catch (e: Exception) {
-                emptyList()
+        override val dnsServers: List<String>
+            get() {
+                return try {
+                    val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                    val network = cm.activeNetwork ?: return emptyList()
+                    val linkProps = cm.getLinkProperties(network) ?: return emptyList()
+                    linkProps.dnsServers.mapNotNull { it.hostAddress }
+                } catch (e: Exception) {
+                    emptyList()
+                }
             }
-        }
+    }
 }
