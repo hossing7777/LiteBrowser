@@ -32,6 +32,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private lateinit var terminalView: TerminalView
     private lateinit var hiddenInput: EditText
+    private var terminalSession: TerminalSession? = null
     private var sessionAttached = false
     private var isHandlingText = false
     private var currentFontSize = 30f
