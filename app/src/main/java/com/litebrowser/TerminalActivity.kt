@@ -212,9 +212,9 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
             // مستقیم TerminalSession با pr-cli
             val session = TerminalSession(
-                prCli.absolutePath,
+                "/system/bin/sh",
                 cwdDir.absolutePath,
-                arrayOf("login"),
+                arrayOf("-l"),
                 envVars,
                 2000,
                 this
