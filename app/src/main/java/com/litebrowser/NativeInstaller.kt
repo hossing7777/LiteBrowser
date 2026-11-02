@@ -1,6 +1,8 @@
 package com.litebrowser
 
 import android.content.Context
+import android.system.Os
+import android.system.OsConstants
 import java.io.File
 import java.io.FileOutputStream
 
@@ -29,9 +31,7 @@ object NativeInstaller {
             )
 
             for ((assetPath, dest) in files) {
-                if (dest.exists() && dest.length() > 0) {
-                    Logger.i("NativeInstaller", "${dest.name} already installed (${dest.length()} bytes)")
-                } else {
+                if (!dest.exists() || dest.length() == 0L) {
                     try {
                         Logger.i("NativeInstaller", "Copying $assetPath → ${dest.absolutePath}")
                         context.assets.open(assetPath).use { input ->
@@ -44,22 +44,40 @@ object NativeInstaller {
                         Logger.e("NativeInstaller", "Failed to install ${dest.name}: ${e.message}", e)
                         continue
                     }
+                } else {
+                    Logger.i("NativeInstaller", "${dest.name} already installed (${dest.length()} bytes)")
                 }
-                // chmod +x صریح
+
+                // 🔑 chmod با Os.chmod (NDK-level) - کار می‌کنه روی Android 10+
                 try {
-                    val result = Runtime.getRuntime().exec(arrayOf("chmod", "755", dest.absolutePath)).waitFor()
-                    Logger.i("NativeInstaller", "chmod 755 ${dest.name}: result=$result, canExecute=${dest.canExecute()}")
+                    val mode = OsConstants.S_IRWXU or OsConstants.S_IRGRP or OsConstants.S_IXGRP or OsConstants.S_IROTH or OsConstants.S_IXOTH // 0755
+                    Os.chmod(dest.absolutePath, mode)
+                    Logger.i("NativeInstaller", "Os.chmod 0755 ${dest.name}: canExecute=${dest.canExecute()}, canRead=${dest.canRead()}")
                 } catch (e: Exception) {
-                    Logger.e("NativeInstaller", "chmod failed for ${dest.name}", e)
+                    Logger.e("NativeInstaller", "Os.chmod failed for ${dest.name}", e)
                 }
             }
 
-            Logger.i("NativeInstaller", "install complete")
-            Logger.i("NativeInstaller", "pr-cli exists: ${File(binDir, "pr-cli").exists()}, canExecute: ${File(binDir, "pr-cli").canExecute()}")
-            Logger.i("NativeInstaller", "busybox exists: ${File(binDir, "busybox").exists()}")
-            Logger.i("NativeInstaller", "libproot.so exists: ${File(libDir, "libproot.so").exists()}")
-            Logger.i("NativeInstaller", "homeDir exists: ${homeDir.exists()}")
+            // ساخت پوشه‌های لازم برای Alpine
+            val alpineRoot = File(prefix, "installed/alpine")
+            File(alpineRoot, "tmp").mkdirs()
+            File(alpineRoot, "proc").mkdirs()
+            File(alpineRoot, "sys").mkdirs()
+            File(alpineRoot, "dev").mkdirs()
 
+            // ساخت /etc/resolv.conf برای DNS
+            try {
+                val resolv = File(alpineRoot, "etc/resolv.conf")
+                resolv.parentFile?.mkdirs()
+                resolv.writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
+                Logger.i("NativeInstaller", "resolv.conf created")
+            } catch (e: Exception) {
+                Logger.e("NativeInstaller", "resolv.conf failed", e)
+            }
+
+            Logger.i("NativeInstaller", "install complete")
+            Logger.i("NativeInstaller", "pr-cli canExecute: ${File(binDir, "pr-cli").canExecute()}")
+            Logger.i("NativeInstaller", "busybox canExecute: ${File(binDir, "busybox").canExecute()}")
         } catch (e: Exception) {
             Logger.e("NativeInstaller", "install failed", e)
         }
