@@ -178,21 +178,21 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val prCli = java.io.File(prefixDir, "bin/pr-cli")
             val binDir = java.io.File(prefixDir, "bin")
             val libDir = java.io.File(prefixDir, "lib")
-            val homeDir = java.io.File(app.filesDir, "home")
+            val cwdDir = app.filesDir  // ← استفاده از filesDir به عنوان cwd
             val cacheDir = app.cacheDir
 
             Logger.i("TerminalActivity", "pr-cli exists: ${prCli.exists()}, size: ${prCli.length()}")
-            Logger.i("TerminalActivity", "homeDir: ${homeDir.absolutePath}, exists: ${homeDir.exists()}")
+            Logger.i("TerminalActivity", "cwdDir: ${cwdDir.absolutePath}, exists: ${cwdDir.exists()}")
             Logger.i("TerminalActivity", "cacheDir: ${cacheDir.absolutePath}")
 
             // لاگ محیط
             val envVars = arrayOf(
                 "PATH=${binDir.absolutePath}:/system/bin:/system/xbin",
-                "HOME=${homeDir.absolutePath}",
+                "HOME=${cwdDir.absolutePath}",
                 "PREFIX=${prefixDir.absolutePath}",
                 "LD_LIBRARY_PATH=${libDir.absolutePath}",
                 "APP_PREFIX=${prefixDir.absolutePath}",
-                "APP_HOME=${homeDir.absolutePath}",
+                "APP_HOME=${cwdDir.absolutePath}",
                 "APP_PACKAGE=${app.packageName}",
                 "PROOT_NO_SECCOMP=1",
                 "PROOT_TMP_DIR=${cacheDir.absolutePath}",
@@ -211,7 +211,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             // مستقیم TerminalSession با pr-cli
             val session = TerminalSession(
                 prCli.absolutePath,
-                homeDir.absolutePath,
+                cwdDir.absolutePath,
                 arrayOf("login", "alpine", "--user", "root"),
                 envVars,
                 2000,
