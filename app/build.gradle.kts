@@ -11,7 +11,8 @@ android {
             useLegacyPackaging = true
             pickFirsts += listOf(
                 "**/libpr-cli.so", "**/libbusybox.so",
-                "**/libproot.so", "**/libproot-loader.so"
+                "**/libproot.so", "**/libproot-loader.so",
+                "**/libtalloc.so" // ← اضافه شدن libtalloc
             )
         }
     }
@@ -23,7 +24,7 @@ android {
         versionName = "1.0"
     }
     androidResources {
-        noCompress += listOf("pr-cli", "busybox", "libproot.so", "libproot-loader.so")
+        noCompress += listOf("pr-cli", "busybox", "libproot.so", "libproot-loader.so", "libtalloc.so")
     }
     buildTypes {
         release {
