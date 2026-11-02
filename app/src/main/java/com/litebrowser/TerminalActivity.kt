@@ -1,18 +1,17 @@
 package com.litebrowser
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -26,10 +25,8 @@ import java.io.File
 class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private lateinit var terminalView: TerminalView
-    private lateinit var hiddenInput: EditText
     private var terminalSession: TerminalSession? = null
     private var sessionAttached = false
-    private var isHandlingText = false
     private var currentFontSize = 30f
     private var ctrlPressed = false
     private var altPressed = false
@@ -48,15 +45,16 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
         terminalView = findViewById(R.id.terminal_view)
         terminalView.setTerminalViewClient(this)
-        hiddenInput = findViewById(R.id.hidden_input)
+        
+        // درخواست فوکوس برای نمایش کیبورد
+        terminalView.requestFocus()
 
         findViewById<Button>(R.id.btn_back).setOnClickListener { finish() }
         findViewById<Button>(R.id.btn_keyboard).setOnClickListener { showKeyboard() }
-        terminalView.setOnClickListener { showKeyboard() }
 
         findViewById<Button>(R.id.btn_esc).setOnClickListener { sendToTerminal("\u001B") }
         findViewById<Button>(R.id.btn_tab).setOnClickListener { sendToTerminal("\t") }
-
+        
         findViewById<Button>(R.id.btn_ctrl).apply {
             alpha = 0.5f
             setOnClickListener {
@@ -85,37 +83,14 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         findViewById<Button>(R.id.btn_tilde).setOnClickListener { sendToTerminal("~") }
         findViewById<Button>(R.id.btn_dash).setOnClickListener { sendToTerminal("-") }
 
-        hiddenInput.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                if (isHandlingText || s == null || s.isEmpty()) return
-                val text = s.toString()
-                if (text.contains("\n")) {
-                    val parts = text.split("\n")
-                    for (i in parts.indices) {
-                        if (parts[i].isNotEmpty()) sendToTerminal(parts[i])
-                        if (i < parts.size - 1) sendToTerminal("\r")
-                    }
-                } else if (text.length == 1 && text[0] == '\u007F') {
-                    sendToTerminal("\u007F")
-                } else {
-                    sendToTerminal(text)
-                }
-                isHandlingText = true
-                hiddenInput.text.clear()
-                isHandlingText = false
+        // دکمه Paste (کپی کردن از کلیپ‌بورد به ترمینال)
+        findViewById<Button>(R.id.btn_paste).setOnClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = clipboard.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                val text = clip.getItemAt(0).text.toString()
+                sendToTerminal(text)
             }
-        })
-
-        hiddenInput.setOnKeyListener { _, keyCode, event ->
-            if (event.action == KeyEvent.ACTION_DOWN) {
-                when (keyCode) {
-                    KeyEvent.KEYCODE_DEL -> { sendToTerminal("\u007F"); true }
-                    KeyEvent.KEYCODE_ENTER -> { sendToTerminal("\r"); true }
-                    else -> false
-                }
-            } else false
         }
 
         terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
@@ -200,9 +175,9 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private fun showKeyboard() {
         try {
-            hiddenInput.requestFocus()
+            terminalView.requestFocus()
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(hiddenInput, InputMethodManager.SHOW_IMPLICIT)
+            imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
         } catch (e: Exception) {
             Logger.e("TerminalActivity", "showKeyboard failed", e)
         }
@@ -210,7 +185,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     override fun onBackPressed() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        if (imm.isAcceptingText) imm.hideSoftInputFromWindow(hiddenInput.windowToken, 0)
+        if (imm.isAcceptingText) imm.hideSoftInputFromWindow(terminalView.windowToken, 0)
         else super.onBackPressed()
     }
 
@@ -224,8 +199,17 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun onTextChanged(session: TerminalSession?) {}
     override fun onTitleChanged(session: TerminalSession?) {}
     override fun onSessionFinished(session: TerminalSession?) { terminalSession = null }
-    override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
-    override fun onPasteTextFromClipboard(session: TerminalSession?) {}
+    override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Terminal", text))
+    }
+    override fun onPasteTextFromClipboard(session: TerminalSession?) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = clipboard.primaryClip
+        if (clip != null && clip.itemCount > 0) {
+            sendToTerminal(clip.getItemAt(0).text.toString())
+        }
+    }
     override fun onBell(session: TerminalSession?) {}
     override fun onColorsChanged(session: TerminalSession?) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
@@ -249,7 +233,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     }
     override fun onSingleTapUp(e: MotionEvent?) { showKeyboard() }
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
-    override fun shouldEnforceCharBasedInput(): Boolean = true
+    override fun shouldEnforceCharBasedInput(): Boolean = false // حالت پیش‌فرض که با کیبوردهای مختلف سازگار است
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
     override fun isTerminalViewSelected(): Boolean = true
     override fun copyModeChanged(copyMode: Boolean) {}

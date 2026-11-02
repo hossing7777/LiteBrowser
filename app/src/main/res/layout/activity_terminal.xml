@@ -51,26 +51,14 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
+        <!-- فقط TerminalView داریم، بدون هیچ EditText مخفی -->
         <com.termux.view.TerminalView
             android:id="@+id/terminal_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="#000000"
-            android:focusable="false"
-            android:focusableInTouchMode="false" />
-
-        <EditText
-            android:id="@+id/hidden_input"
-            android:layout_width="1dp"
-            android:layout_height="1dp"
-            android:alpha="0"
-            android:background="@android:color/transparent"
-            android:inputType="text"
-            android:imeOptions="flagNoExtractUi|flagNoFullscreen"
             android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:singleLine="true"
-            android:cursorVisible="false" />
+            android:focusableInTouchMode="true" />
     </FrameLayout>
 
     <HorizontalScrollView
@@ -102,6 +90,9 @@
             <Button android:id="@+id/btn_pipe" style="@style/ExtraKeyButton" android:text="|" />
             <Button android:id="@+id/btn_tilde" style="@style/ExtraKeyButton" android:text="~" />
             <Button android:id="@+id/btn_dash" style="@style/ExtraKeyButton" android:text="-" />
+            
+            <!-- دکمه جدید برای چسباندن متن -->
+            <Button android:id="@+id/btn_paste" style="@style/ExtraKeyButton" android:text="PASTE" android:textColor="#00FF00" />
         </LinearLayout>
     </HorizontalScrollView>
 </LinearLayout>
