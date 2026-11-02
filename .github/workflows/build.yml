@@ -7,46 +7,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      JITPACK_NDK_VERSION: "27.0.12077973"
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
+        # submodules: recursive را حذف کردیم تا خطای ساب‌ماژول رخ ندهد
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-
-      - name: Set up NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r27
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libtalloc-dev
-
-      - name: Build PRoot from source
-        run: |
-          cd pr-source/src/proot
-          make -C src loader.elf loader-m32.elf build.h
-          make -C src proot care
-
-      - name: Build pr-cli (Rust)
-        run: |
-          cd pr-source/src/pr-cli
-          cargo build --target aarch64-linux-android --release
-
-      - name: Copy binaries to jniLibs
-        run: |
-          mkdir -p app/src/main/jniLibs/arm64-v8a/
-          cp pr-source/src/proot/src/proot app/src/main/jniLibs/arm64-v8a/libproot.so
-          cp pr-source/src/proot/src/loader/loader app/src/main/jniLibs/arm64-v8a/libproot-loader.so
-          cp pr-source/src/pr-cli/target/aarch64-linux-android/release/pr-cli app/src/main/jniLibs/arm64-v8a/libpr-cli.so
 
       - uses: gradle/actions/setup-gradle@v4
         with:
