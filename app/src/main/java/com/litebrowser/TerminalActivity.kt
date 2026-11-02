@@ -103,7 +103,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "PATH=${nativeDir}:${prefixDir.absolutePath}/bin:/system/bin:/system/xbin",
                 "HOME=${homeDir.absolutePath}",
                 "PREFIX=${prefixDir.absolutePath}",
-                "LD_LIBRARY_PATH=${nativeDir}",
+                "LD_LIBRARY_PATH=${nativeDir}:${prefixDir.absolutePath}/lib",
                 "APP_PREFIX=${prefixDir.absolutePath}",
                 "APP_HOME=${homeDir.absolutePath}",
                 "APP_PACKAGE=${app.packageName}",

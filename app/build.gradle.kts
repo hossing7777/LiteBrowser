@@ -10,12 +10,9 @@ android {
         jniLibs {
             useLegacyPackaging = true
             pickFirsts += listOf(
-                "**/libpr-cli.so", 
-                "**/libbusybox.so",
-                "**/libproot.so", 
-                "**/libproot-loader.so",
-                "**/libtalloc.so", 
-                "**/libtalloc.so.2"
+                "**/libpr-cli.so", "**/libbusybox.so",
+                "**/libproot.so", "**/libproot-loader.so",
+                "**/libtalloc.so"
             )
         }
     }
@@ -27,10 +24,7 @@ android {
         versionName = "1.0"
     }
     androidResources {
-        noCompress += listOf(
-            "pr-cli", "busybox", "libproot.so", 
-            "libproot-loader.so", "libtalloc.so", "libtalloc.so.2"
-        )
+        noCompress += listOf("pr-cli", "busybox", "libproot.so", "libproot-loader.so", "libtalloc.so")
     }
     buildTypes {
         release {

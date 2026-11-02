@@ -27,13 +27,22 @@ object NativeInstaller {
             
             File(alpineRoot, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
 
-            // کپی کردن فقط busybox (در صورت نیاز) به پوشه files
             val nativeDir = nativeDir(context)
+            
+            // کپی کردن busybox
             val busyboxDest = File(prefix, "bin/busybox")
             val busyboxSrc = File(nativeDir, "libbusybox.so")
             if (busyboxSrc.exists()) {
                 busyboxSrc.copyTo(busyboxDest, overwrite = true)
                 Os.chmod(busyboxDest.absolutePath, 493) // 0755
+            }
+
+            // کپی کردن libtalloc به عنوان libtalloc.so.2
+            val tallocDest = File(prefix, "lib/libtalloc.so.2")
+            val tallocSrc = File(nativeDir, "libtalloc.so")
+            if (tallocSrc.exists()) {
+                tallocSrc.copyTo(tallocDest, overwrite = true)
+                Os.chmod(tallocDest.absolutePath, 493) // 0755
             }
 
         } catch (e: Exception) {
