@@ -31,6 +31,9 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // اتصال این اکتیویتی به عنوان کلاینت دریافت‌کننده دیتای ترمینال
+        TerminalManager.setClient(this)
+        
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(R.layout.activity_terminal)
 
@@ -119,7 +122,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val cols = (viewWidth / (currentFontSize * 0.62f)).toInt().coerceIn(20, 200)
             val rows = (viewHeight / (currentFontSize * 1.35f)).toInt().coerceIn(8, 100)
 
-            // ✅ آرگومان‌های استاندارد PRoot (بدون تغییرات اشتباه قبلی)
             val args = arrayOf(
                 prootBin.absolutePath,
                 "--link2symlink",
@@ -132,7 +134,16 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "/bin/sh", "-l"
             )
 
-            val session = TerminalSession(prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, this)
+            // بررسی اینکه آیا جلسه قبلی هنوز زنده است یا خیر
+            var session = TerminalManager.session
+            if (session == null || !session.isRunning) {
+                // اگر جلسه‌ای وجود نداشت، یکی جدید بساز و به منیجر بده
+                session = TerminalSession(
+                    prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager
+                )
+                TerminalManager.session = session
+            }
+
             if (!session.isRunning) throw IllegalStateException("Terminal failed")
 
             session.updateSize(cols, rows)
@@ -198,16 +209,22 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun onBackPressed() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         if (imm.isAcceptingText) imm.hideSoftInputFromWindow(terminalView.windowToken, 0)
-        else super.onBackPressed()
+        else {
+            // فقط صفحه بسته می‌شود، ترمینال در پس‌زمینه زنده می‌ماند
+            super.onBackPressed()
+        }
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        try { terminalSession?.finishIfRunning() } catch (e: Exception) {}
+        // قطع ارتباط این اکتیویتی با منیجر تا در پس‌زمینه کرش نکند
+        TerminalManager.setClient(null)
+        // ❌ خط finishIfRunning() حذف شد تا پروسه کشته نشود
         terminalSession = null
         super.onDestroy()
     }
 
+    // این متدها اکنون به TerminalManager پاس داده می‌شوند
     override fun onTextChanged(session: TerminalSession?) { runOnUiThread { terminalView.invalidate() } }
     override fun onTitleChanged(session: TerminalSession?) {}
     override fun onSessionFinished(session: TerminalSession?) {
