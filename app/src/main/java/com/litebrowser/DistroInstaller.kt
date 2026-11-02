@@ -15,9 +15,10 @@ object DistroInstaller {
 
     fun isInstalled(context: Context): Boolean {
         val rootfs = File(context.filesDir, "usr/var/lib/pr/installed-rootfs/$DISTRO")
+        // ✅ بررسی وجود bin/sh (حتی اگر لینک نمادین باشد)
         val sh = File(rootfs, "bin/sh")
-        Logger.i("DistroInstaller", "isInstalled check: $rootfs, sh exists: ${sh.exists()}")
-        return sh.exists()
+        val busybox = File(rootfs, "bin/busybox")
+        return sh.exists() || busybox.exists()
     }
 
     fun install(context: Context, onProgress: (String) -> Unit = {}) {
@@ -25,21 +26,19 @@ object DistroInstaller {
             val prefix = File(context.filesDir, "usr")
             val installed = File(prefix, "var/lib/pr/installed-rootfs/$DISTRO")
             
-            // پاک کردن نصب قبلی برای اطمینان از استخراج صحیح
             if (installed.exists()) {
                 installed.deleteRecursively()
             }
             installed.mkdirs()
 
-            onProgress("Extracting Alpine rootfs from $ASSET_NAME...")
-            Logger.i("DistroInstaller", "Extracting $ASSET_NAME to ${installed.absolutePath}")
+            onProgress("Extracting Alpine rootfs...")
+            Logger.i("DistroInstaller", "Extracting to ${installed.absolutePath}")
 
             context.assets.open(ASSET_NAME).use { input ->
                 GZIPInputStream(input).use { gzip ->
                     TarArchiveInputStream(gzip).use { tar ->
                         var entry: TarArchiveEntry? = tar.nextEntry
                         var count = 0
-                        var filesCount = 0
                         
                         while (entry != null) {
                             val outFile = File(installed, entry.name)
@@ -47,17 +46,14 @@ object DistroInstaller {
                             if (entry.isDirectory) {
                                 outFile.mkdirs()
                             } else if (entry.isSymbolicLink) {
-                                // ✅ پشتیبانی از لینک‌های نمادین
                                 outFile.parentFile?.mkdirs()
                                 try {
-                                    // حذف فایل قبلی اگر وجود دارد
                                     if (outFile.exists()) outFile.delete()
                                     Os.symlink(entry.linkName, outFile.absolutePath)
                                 } catch (e: Exception) {
                                     Logger.e("DistroInstaller", "Symlink failed: ${entry.name} -> ${entry.linkName}", e)
                                 }
                             } else if (entry.isLink) {
-                                // هارد لینک
                                 outFile.parentFile?.mkdirs()
                                 val target = File(installed, entry.linkName)
                                 if (target.exists()) {
@@ -68,27 +64,24 @@ object DistroInstaller {
                                 FileOutputStream(outFile).use { out ->
                                     tar.copyTo(out)
                                 }
-                                if (entry.mode and 0x40 != 0) { // -rwx
+                                if (entry.mode and 0x40 != 0) {
                                     outFile.setExecutable(true)
                                 }
                             }
                             count++
-                            if (count % 200 == 0) {
-                                onProgress("Extracted $count entries...")
-                            }
+                            if (count % 200 == 0) onProgress("Extracted $count entries...")
                             entry = tar.nextEntry
                         }
-                        Logger.i("DistroInstaller", "Extracted $count entries total")
                     }
                 }
             }
 
             val shFile = File(installed, "bin/sh")
             if (shFile.exists()) {
-                Logger.i("DistroInstaller", "✅ Alpine installed successfully at ${installed.absolutePath}")
-                onProgress("Done. Alpine installed.")
+                Logger.i("DistroInstaller", "✅ Alpine installed successfully.")
+                onProgress("Done.")
             } else {
-                Logger.e("DistroInstaller", "❌ bin/sh not found after extraction!")
+                Logger.e("DistroInstaller", "❌ bin/sh still missing!")
                 onProgress("Error: bin/sh not found")
             }
             

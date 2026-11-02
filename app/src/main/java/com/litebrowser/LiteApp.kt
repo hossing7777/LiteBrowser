@@ -22,29 +22,27 @@ class LiteApp : Application() {
             Logger.e("App", "NativeInstaller failed", e)
         }
 
-        try {
-            if (!DistroInstaller.isInstalled(this)) {
-                Logger.i("App", "Alpine not installed yet, installing...")
-                DistroInstaller.install(this) { msg ->
-                    Logger.i("App", msg)
+        // ✅ اجرای نصب در ترد پس‌زمینه برای جلوگیری از فریز شدن
+        Thread {
+            try {
+                if (!DistroInstaller.isInstalled(this)) {
+                    Logger.i("App", "Alpine not installed yet, installing...")
+                    DistroInstaller.install(this) { msg ->
+                        Logger.i("App", msg)
+                    }
+                } else {
+                    Logger.i("App", "Alpine already installed")
                 }
-            } else {
-                Logger.i("App", "Alpine already installed")
+            } catch (e: Exception) {
+                Logger.e("App", "DistroInstaller failed", e)
             }
-        } catch (e: Exception) {
-            Logger.e("App", "DistroInstaller failed", e)
-        }
+        }.start()
 
         Thread.setDefaultUncaughtExceptionHandler { thread, ex ->
             Logger.crash(thread, ex)
         }
     }
 
-    /**
-     * پیاده‌سازی ProotHost برای این Application.
-     * به جای اینکه LiteApp مستقیماً ProotHost رو پیاده‌سازی کنه (که با Application تداخل داره)،
-     * یک adapter جداگانه می‌سازیم.
-     */
     fun getProotHost(): ProotHost = object : ProotHost {
         override val prefixDir: File
             get() = File(filesDir, "usr").also { it.mkdirs() }
