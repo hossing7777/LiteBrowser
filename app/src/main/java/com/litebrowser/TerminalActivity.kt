@@ -175,7 +175,8 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         try {
             val app = application as LiteApp
             val prefixDir = java.io.File(app.filesDir, "usr")
-            val prCli = java.io.File(prefixDir, "bin/pr-cli")
+            val nativeDir = app.applicationInfo.nativeLibraryDir
+            val prCli = NativeInstaller.prCli(app)
             val binDir = java.io.File(prefixDir, "bin")
             val libDir = java.io.File(prefixDir, "lib")
             val cwdDir = app.filesDir  // ← استفاده از filesDir به عنوان cwd
