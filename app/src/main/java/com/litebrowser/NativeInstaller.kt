@@ -15,8 +15,32 @@ object NativeInstaller {
     fun nativeDir(c: Context) = File(c.applicationInfo.nativeLibraryDir)
 
     fun prCli(c: Context): File {
-        val n = File(nativeDir(c), "libpr-cli.so")
-        return if (n.exists()) n else File(c.filesDir, "usr/bin/pr-cli")
+        // ۱. اول nativeLibraryDir رو چک کن
+        val native = File(nativeDir(c), "libpr-cli.so")
+        if (native.exists()) {
+            Logger.i("NativeInstaller", "prCli: using nativeLibraryDir: ${native.absolutePath}")
+            return native
+        }
+        // ۲. بعد /data/local/tmp رو چک کن (اگر دسترسی داریم)
+        val tmp = File("/data/local/tmp/libpr-cli.so")
+        if (tmp.exists() && tmp.canExecute()) {
+            Logger.i("NativeInstaller", "prCli: using /data/local/tmp: ${tmp.absolutePath}")
+            return tmp
+        }
+        // ۳. در نهایت، کپی به /data/local/tmp
+        try {
+            val src = File(c.filesDir, "usr/bin/pr-cli")
+            if (src.exists()) {
+                tmp.parentFile?.mkdirs()
+                src.copyTo(tmp, overwrite = true)
+                Os.chmod(tmp.absolutePath, 493) // 0755
+                Logger.i("NativeInstaller", "prCli: copied to /data/local/tmp: ${tmp.absolutePath}, canExecute=${tmp.canExecute()}")
+                return tmp
+            }
+        } catch (e: Exception) {
+            Logger.e("NativeInstaller", "prCli: failed to copy to /data/local/tmp", e)
+        }
+        return File(c.filesDir, "usr/bin/pr-cli")
     }
 
     fun install(context: Context) {
