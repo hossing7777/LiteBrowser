@@ -6,6 +6,7 @@
     android:orientation="vertical"
     android:background="#000000">
 
+    <!-- نوار ابزار بالا -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -25,14 +26,28 @@
             android:backgroundTint="#333333"
             android:textColor="#FFFFFF" />
 
-        <TextView
+        <!-- منوی کشویی برای انتخاب جلسه -->
+        <Spinner
+            android:id="@+id/spinner_sessions"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Terminal"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:paddingStart="12dp" />
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:backgroundTint="#FFFFFF"
+            android:paddingStart="8dp" />
+
+        <!-- دکمه ساخت جلسه جدید -->
+        <Button
+            android:id="@+id/btn_new_session"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:minWidth="48dp"
+            android:backgroundTint="#2E7D32"
+            android:textColor="#FFFFFF" />
 
         <Button
             android:id="@+id/btn_keyboard"
@@ -41,6 +56,7 @@
             android:text="⌨"
             android:textSize="18sp"
             android:minWidth="48dp"
+            android:layout_marginStart="4dp"
             android:backgroundTint="#333333"
             android:textColor="#FFFFFF" />
     </LinearLayout>

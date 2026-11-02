@@ -4,21 +4,27 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 
 object TerminalManager : TerminalSessionClient {
-    // نگه داشتن جلسه ترمینال در حافظه
-    var session: TerminalSession? = null
+    // لیست تمام جلسات فعال
+    val sessions = mutableListOf<TerminalSession>()
     private var currentClient: TerminalSessionClient? = null
 
     fun setClient(client: TerminalSessionClient?) {
         currentClient = client
     }
 
+    fun addSession(session: TerminalSession) {
+        sessions.add(session)
+    }
+
+    fun removeSession(session: TerminalSession) {
+        sessions.remove(session)
+    }
+
     override fun onTextChanged(changedSession: TerminalSession?) { currentClient?.onTextChanged(changedSession) }
     override fun onTitleChanged(changedSession: TerminalSession?) { currentClient?.onTitleChanged(changedSession) }
     override fun onSessionFinished(finishedSession: TerminalSession?) {
+        finishedSession?.let { removeSession(it) }
         currentClient?.onSessionFinished(finishedSession)
-        if (session == finishedSession) {
-            session = null
-        }
     }
     override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) { currentClient?.onCopyTextToClipboard(session, text) }
     override fun onPasteTextFromClipboard(session: TerminalSession?) { currentClient?.onPasteTextFromClipboard(session) }

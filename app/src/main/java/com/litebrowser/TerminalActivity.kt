@@ -11,7 +11,9 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.Spinner
 import android.widget.Toast
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
@@ -22,41 +24,86 @@ import java.io.File
 class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private lateinit var terminalView: TerminalView
+    private lateinit var spinnerSessions: Spinner
     private var terminalSession: TerminalSession? = null
     private var sessionAttached = false
     private var currentFontSize = 18f
     private var ctrlPressed = false
     private var altPressed = false
     private val handler = Handler(Looper.getMainLooper())
+    private var isUpdatingSpinner = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // اتصال این اکتیویتی به عنوان کلاینت دریافت‌کننده دیتای ترمینال
         TerminalManager.setClient(this)
         
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(R.layout.activity_terminal)
 
         terminalView = findViewById(R.id.terminal_view)
+        spinnerSessions = findViewById(R.id.spinner_sessions)
+        
         terminalView.isFocusable = true
         terminalView.isFocusableInTouchMode = true
         terminalView.setTerminalViewClient(this)
 
         setupButtons()
+        setupSpinner()
 
         terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
             override fun onLayoutChange(v: View, left: Int, top: Int, right: Int, bottom: Int, oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int) {
                 if (right > left && bottom > top && !sessionAttached) {
-                    startTerminalSession(right - left, bottom - top)
+                    // اگر هیچ جلسه‌ای وجود ندارد، یکی بساز
+                    if (TerminalManager.sessions.isEmpty()) {
+                        createNewSession(right - left, bottom - top)
+                    } else {
+                        // در غیر این صورت به آخرین جلسه وصل شو
+                        attachToSession(TerminalManager.sessions.last(), right - left, bottom - top)
+                    }
                 }
             }
         })
         terminalView.requestFocus()
     }
 
+    private fun setupSpinner() {
+        spinnerSessions.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (isUpdatingSpinner) return
+                val session = TerminalManager.sessions.getOrNull(position)
+                if (session != null && session != terminalSession) {
+                    attachToSession(session, terminalView.width, terminalView.height)
+                }
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+    }
+
+    private fun updateSpinner() {
+        isUpdatingSpinner = true
+        val sessionNames = TerminalManager.sessions.mapIndexed { index, session ->
+            val title = session.getTitle() ?: "Session ${index + 1}"
+            "$title (PID: ${session.getPid()})"
+        }
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, sessionNames)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerSessions.adapter = adapter
+        
+        // انتخاب جلسه فعلی در منو
+        val currentIndex = TerminalManager.sessions.indexOf(terminalSession)
+        if (currentIndex >= 0) {
+            spinnerSessions.setSelection(currentIndex)
+        }
+        isUpdatingSpinner = false
+    }
+
     private fun setupButtons() {
         findViewById<Button>(R.id.btn_back).setOnClickListener { finish() }
         findViewById<Button>(R.id.btn_keyboard).setOnClickListener { showKeyboard() }
+        findViewById<Button>(R.id.btn_new_session).setOnClickListener { 
+            createNewSession(terminalView.width, terminalView.height) 
+        }
+        
         findViewById<Button>(R.id.btn_esc).setOnClickListener { sendToTerminal("\u001B") }
         findViewById<Button>(R.id.btn_tab).setOnClickListener { sendToTerminal("\t") }
         findViewById<Button>(R.id.btn_ctrl).apply {
@@ -83,8 +130,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         findViewById<Button>(R.id.btn_paste).setOnClickListener { pasteFromClipboard() }
     }
 
-    private fun startTerminalSession(viewWidth: Int, viewHeight: Int) {
-        if (sessionAttached) return
+    private fun createNewSession(viewWidth: Int, viewHeight: Int) {
         try {
             val app = application as LiteApp
             val prefixDir = File(app.filesDir, "usr")
@@ -93,13 +139,8 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val nativeDir = app.applicationInfo.nativeLibraryDir
 
             val prootBin = File(nativeDir, "libproot.so")
-            if (!prootBin.exists()) throw IllegalStateException("proot not found at $prootBin")
-
             val prootLoader = File(nativeDir, "libproot-loader.so")
-            if (!prootLoader.exists()) throw IllegalStateException("proot-loader not found at $prootLoader")
-
             val alpineRoot = File(prefixDir, "var/lib/pr/installed-rootfs/alpine")
-            if (!File(alpineRoot, "bin/busybox").exists()) throw IllegalStateException("Alpine not installed")
 
             val envVars = arrayOf(
                 "PATH=${nativeDir}:${prefixDir.absolutePath}/bin:/system/bin:/system/xbin",
@@ -118,44 +159,43 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "LC_ALL=C.UTF-8"
             )
 
-            terminalView.setTextSize(currentFontSize.toInt())
-            val cols = (viewWidth / (currentFontSize * 0.62f)).toInt().coerceIn(20, 200)
-            val rows = (viewHeight / (currentFontSize * 1.35f)).toInt().coerceIn(8, 100)
-
             val args = arrayOf(
-                prootBin.absolutePath,
-                "--link2symlink",
-                "-0",
+                prootBin.absolutePath, "--link2symlink", "-0",
                 "-r", alpineRoot.absolutePath,
-                "-b", "/dev",
-                "-b", "/proc",
-                "-b", "/sys",
-                "-w", "/root",
-                "/bin/sh", "-l"
+                "-b", "/dev", "-b", "/proc", "-b", "/sys",
+                "-w", "/root", "/bin/sh", "-l"
             )
 
-            // بررسی اینکه آیا جلسه قبلی هنوز زنده است یا خیر
-            var session = TerminalManager.session
-            if (session == null || !session.isRunning) {
-                // اگر جلسه‌ای وجود نداشت، یکی جدید بساز و به منیجر بده
-                session = TerminalSession(
-                    prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager
-                )
-                TerminalManager.session = session
-            }
-
-            if (!session.isRunning) throw IllegalStateException("Terminal failed")
-
-            session.updateSize(cols, rows)
-            terminalSession = session
-            terminalView.attachSession(session)
-            sessionAttached = true
-            terminalView.requestFocus()
-            handler.postDelayed({ showKeyboard() }, 500)
+            val session = TerminalSession(
+                prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager
+            )
+            
+            TerminalManager.addSession(session)
+            // اتصال به جلسه جدید
+            attachToSession(session, viewWidth, viewHeight)
+            updateSpinner()
+            
         } catch (e: Throwable) {
-            Logger.e("Terminal", "Startup failed", e)
+            Logger.e("Terminal", "Create session failed", e)
             Toast.makeText(this, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun attachToSession(session: TerminalSession, viewWidth: Int, viewHeight: Int) {
+        if (terminalSession === session && sessionAttached) return
+        
+        terminalView.setTextSize(currentFontSize.toInt())
+        val cols = (viewWidth / (currentFontSize * 0.62f)).toInt().coerceIn(20, 200)
+        val rows = (viewHeight / (currentFontSize * 1.35f)).toInt().coerceIn(8, 100)
+        session.updateSize(cols, rows)
+        
+        terminalSession = session
+        terminalView.attachSession(session)
+        sessionAttached = true
+        terminalView.requestFocus()
+        handler.postDelayed({ showKeyboard() }, 500)
+        
+        updateSpinner()
     }
 
     private fun sendToTerminal(text: String) {
@@ -209,27 +249,41 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     override fun onBackPressed() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         if (imm.isAcceptingText) imm.hideSoftInputFromWindow(terminalView.windowToken, 0)
-        else {
-            // فقط صفحه بسته می‌شود، ترمینال در پس‌زمینه زنده می‌ماند
-            super.onBackPressed()
-        }
+        else super.onBackPressed()
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        // قطع ارتباط این اکتیویتی با منیجر تا در پس‌زمینه کرش نکند
         TerminalManager.setClient(null)
-        // ❌ خط finishIfRunning() حذف شد تا پروسه کشته نشود
         terminalSession = null
         super.onDestroy()
     }
 
-    // این متدها اکنون به TerminalManager پاس داده می‌شوند
-    override fun onTextChanged(session: TerminalSession?) { runOnUiThread { terminalView.invalidate() } }
-    override fun onTitleChanged(session: TerminalSession?) {}
+    override fun onTextChanged(session: TerminalSession?) { 
+        runOnUiThread { 
+            terminalView.invalidate()
+            if (session == terminalSession) updateSpinner() 
+        } 
+    }
+    override fun onTitleChanged(session: TerminalSession?) { 
+        runOnUiThread { updateSpinner() } 
+    }
     override fun onSessionFinished(session: TerminalSession?) {
-        if (terminalSession === session) terminalSession = null
-        runOnUiThread { Toast.makeText(this, "Session ended", Toast.LENGTH_SHORT).show() }
+        runOnUiThread {
+            if (terminalSession === session) {
+                terminalSession = null
+                sessionAttached = false
+                // رفتن به جلسه بعدی اگر وجود دارد
+                val nextSession = TerminalManager.sessions.firstOrNull()
+                if (nextSession != null) {
+                    attachToSession(nextSession, terminalView.width, terminalView.height)
+                } else {
+                    Toast.makeText(this, "All sessions ended", Toast.LENGTH_SHORT).show()
+                    finish() // بستن صفحه اگر هیچ جلسه‌ای نماند
+                }
+            }
+            updateSpinner()
+        }
     }
     override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
