@@ -13,10 +13,18 @@ object NativeInstaller {
             File(prefix, "bin").mkdirs()
             File(prefix, "lib").mkdirs()
             File(context.filesDir, "home").mkdirs()
-            File(context.cacheDir, "proot-tmp").mkdirs()
+            
+            val tmpDir = File(context.cacheDir, "proot-tmp")
+            tmpDir.mkdirs()
+            tmpDir.setReadable(true, false)
+            tmpDir.setWritable(true, false)
+            tmpDir.setExecutable(true, false)
 
             val alpineRoot = File(prefix, "var/lib/pr/installed-rootfs/alpine")
-            for (d in listOf("tmp", "proc", "sys", "dev", "etc")) File(alpineRoot, d).mkdirs()
+            for (d in listOf("tmp", "proc", "sys", "dev", "etc", "dev/pts", "dev/shm")) {
+                File(alpineRoot, d).mkdirs()
+            }
+            
             File(alpineRoot, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
 
             val nativeDir = nativeDir(context)
@@ -26,6 +34,28 @@ object NativeInstaller {
                 busyboxSrc.copyTo(busyboxDest, overwrite = true)
                 Os.chmod(busyboxDest.absolutePath, 493)
             }
+
+            val prootDest = File(prefix, "bin/proot")
+            val prootSrc = File(nativeDir, "libproot.so")
+            if (prootSrc.exists()) {
+                prootSrc.copyTo(prootDest, overwrite = true)
+                Os.chmod(prootDest.absolutePath, 493)
+            }
+
+            val prootLoaderDest = File(prefix, "bin/proot-loader")
+            val prootLoaderSrc = File(nativeDir, "libproot-loader.so")
+            if (prootLoaderSrc.exists()) {
+                prootLoaderSrc.copyTo(prootLoaderDest, overwrite = true)
+                Os.chmod(prootLoaderDest.absolutePath, 493)
+            }
+
+            val prCliDest = File(prefix, "bin/pr-cli")
+            val prCliSrc = File(nativeDir, "libpr-cli.so")
+            if (prCliSrc.exists()) {
+                prCliSrc.copyTo(prCliDest, overwrite = true)
+                Os.chmod(prCliDest.absolutePath, 493)
+            }
+
         } catch (e: Exception) {
             Logger.e("NativeInstaller", "install failed", e)
         }
