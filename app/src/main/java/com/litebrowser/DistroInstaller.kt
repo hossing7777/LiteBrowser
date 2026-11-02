@@ -13,7 +13,7 @@ object DistroInstaller {
     private const val ASSET_NAME = "alpine-rootfs.bin"
 
     fun isInstalled(context: Context): Boolean {
-        val rootfs = File(context.filesDir, "usr/installed/$DISTRO")
+        val rootfs = File(context.filesDir, "usr/var/lib/pr/installed-rootfs/$DISTRO")
         val sh = File(rootfs, "bin/sh")
         Logger.i("DistroInstaller", "isInstalled check: $rootfs, sh exists: ${sh.exists()}")
         return sh.exists()
@@ -22,7 +22,7 @@ object DistroInstaller {
     fun install(context: Context, onProgress: (String) -> Unit = {}) {
         try {
             val prefix = File(context.filesDir, "usr")
-            val installed = File(prefix, "installed/$DISTRO")
+            val installed = File(prefix, "var/lib/pr/installed-rootfs/$DISTRO")
             installed.mkdirs()
 
             onProgress("Extracting Alpine rootfs from $ASSET_NAME...")

@@ -50,7 +50,7 @@ object NativeInstaller {
             File(prefix, "lib").mkdirs()
             File(context.filesDir, "home").mkdirs()
 
-            val alpineRoot = File(prefix, "installed/alpine")
+            val alpineRoot = File(prefix, "var/lib/pr/installed-rootfs/alpine")
             for (d in listOf("tmp", "proc", "sys", "dev", "etc")) File(alpineRoot, d).mkdirs()
             File(alpineRoot, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
 

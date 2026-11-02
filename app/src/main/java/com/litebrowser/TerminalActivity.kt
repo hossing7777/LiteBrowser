@@ -90,7 +90,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val homeDir = File(app.filesDir, "home").also { it.mkdirs() }
             val cacheDir = app.cacheDir
             val nativeDir = app.applicationInfo.nativeLibraryDir
-            val alpineRoot = File(prefixDir, "installed/alpine")
+            val alpineRoot = File(prefixDir, "var/lib/pr/installed-rootfs/alpine")
 
             if (!File(alpineRoot, "bin/sh").exists()) throw IllegalStateException("Alpine not installed")
             val prCli = NativeInstaller.prCli(app)
