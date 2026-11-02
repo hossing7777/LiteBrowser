@@ -139,9 +139,9 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val rows = (viewHeight / 50).coerceAtLeast(10)
 
             val session = TerminalSession(
-                "/system/bin/sh",
+                NativeInstaller.prCli(app).absolutePath,
                 cwdDir.absolutePath,
-                arrayOf("-l"),
+                arrayOf("login", "alpine"),
                 envVars, 2000, this
             )
             session.updateSize(cols, rows)
