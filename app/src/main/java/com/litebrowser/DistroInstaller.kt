@@ -1,6 +1,7 @@
 package com.litebrowser
 
 import android.content.Context
+import android.system.Os
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.GZIPInputStream
@@ -23,6 +24,11 @@ object DistroInstaller {
         try {
             val prefix = File(context.filesDir, "usr")
             val installed = File(prefix, "var/lib/pr/installed-rootfs/$DISTRO")
+            
+            // پاک کردن نصب قبلی برای اطمینان از استخراج صحیح
+            if (installed.exists()) {
+                installed.deleteRecursively()
+            }
             installed.mkdirs()
 
             onProgress("Extracting Alpine rootfs from $ASSET_NAME...")
@@ -37,40 +43,48 @@ object DistroInstaller {
                         
                         while (entry != null) {
                             val outFile = File(installed, entry.name)
+                            
                             if (entry.isDirectory) {
                                 outFile.mkdirs()
+                            } else if (entry.isSymbolicLink) {
+                                // ✅ پشتیبانی از لینک‌های نمادین
+                                outFile.parentFile?.mkdirs()
+                                try {
+                                    // حذف فایل قبلی اگر وجود دارد
+                                    if (outFile.exists()) outFile.delete()
+                                    Os.symlink(entry.linkName, outFile.absolutePath)
+                                } catch (e: Exception) {
+                                    Logger.e("DistroInstaller", "Symlink failed: ${entry.name} -> ${entry.linkName}", e)
+                                }
+                            } else if (entry.isLink) {
+                                // هارد لینک
+                                outFile.parentFile?.mkdirs()
+                                val target = File(installed, entry.linkName)
+                                if (target.exists()) {
+                                    target.copyTo(outFile, overwrite = true)
+                                }
                             } else {
                                 outFile.parentFile?.mkdirs()
                                 FileOutputStream(outFile).use { out ->
                                     tar.copyTo(out)
                                 }
-                                filesCount++
-                                
                                 if (entry.mode and 0x40 != 0) { // -rwx
-                                    outFile.setExecutable(true)
-                                }
-                                if (entry.name.startsWith("bin/") || entry.name.startsWith("sbin/") || 
-                                    entry.name.startsWith("usr/bin/") || entry.name.startsWith("usr/sbin/") ||
-                                    entry.name.startsWith("usr/lib/") || entry.name.startsWith("lib/")) {
                                     outFile.setExecutable(true)
                                 }
                             }
                             count++
                             if (count % 200 == 0) {
-                                onProgress("Extracted $count entries ($filesCount files)...")
+                                onProgress("Extracted $count entries...")
                             }
                             entry = tar.nextEntry
                         }
-                        
-                        Logger.i("DistroInstaller", "Extracted $count entries, $filesCount files total")
+                        Logger.i("DistroInstaller", "Extracted $count entries total")
                     }
                 }
             }
 
-            // چک نهایی
             val shFile = File(installed, "bin/sh")
             if (shFile.exists()) {
-                shFile.setExecutable(true)
                 Logger.i("DistroInstaller", "✅ Alpine installed successfully at ${installed.absolutePath}")
                 onProgress("Done. Alpine installed.")
             } else {

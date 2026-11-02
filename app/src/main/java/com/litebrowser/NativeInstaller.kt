@@ -21,7 +21,8 @@ object NativeInstaller {
             tmpDir.setExecutable(true, false)
 
             val alpineRoot = File(prefix, "var/lib/pr/installed-rootfs/alpine")
-            for (d in listOf("tmp", "proc", "sys", "dev", "etc", "dev/pts", "dev/shm")) {
+            // ✅ ایجاد تمام دایرکتوری‌های ضروری از جمله dev/shm
+            for (d in listOf("tmp", "proc", "sys", "dev", "dev/pts", "dev/shm", "etc")) {
                 File(alpineRoot, d).mkdirs()
             }
             
@@ -29,22 +30,19 @@ object NativeInstaller {
 
             val nativeDir = nativeDir(context)
             
-            // کپی کردن busybox
             val busyboxDest = File(prefix, "bin/busybox")
             val busyboxSrc = File(nativeDir, "libbusybox.so")
             if (busyboxSrc.exists()) {
                 busyboxSrc.copyTo(busyboxDest, overwrite = true)
-                Os.chmod(busyboxDest.absolutePath, 493) // 0755
+                Os.chmod(busyboxDest.absolutePath, 493)
             }
 
-            // کپی کردن libtalloc به عنوان libtalloc.so.2
             val tallocDest = File(prefix, "lib/libtalloc.so.2")
             val tallocSrc = File(nativeDir, "libtalloc.so")
             if (tallocSrc.exists()) {
                 tallocSrc.copyTo(tallocDest, overwrite = true)
-                Os.chmod(tallocDest.absolutePath, 493) // 0755
+                Os.chmod(tallocDest.absolutePath, 493)
             }
-
         } catch (e: Exception) {
             Logger.e("NativeInstaller", "install failed", e)
         }

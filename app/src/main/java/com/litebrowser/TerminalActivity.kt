@@ -89,7 +89,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val tmpDir = File(app.cacheDir, "proot-tmp").also { it.mkdirs() }
             val nativeDir = app.applicationInfo.nativeLibraryDir
 
-            // اجرای مستقیم proot از nativeLibraryDir برای دور زدن محدودیت اندروید ۱۰+
             val prootBin = File(nativeDir, "libproot.so")
             if (!prootBin.exists()) throw IllegalStateException("proot not found at $prootBin")
 
@@ -120,14 +119,15 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val cols = (viewWidth / (currentFontSize * 0.62f)).toInt().coerceIn(20, 200)
             val rows = (viewHeight / (currentFontSize * 1.35f)).toInt().coerceIn(8, 100)
 
-            // ساخت آرگومان‌ها برای proot
+            // ✅ آرگومان‌های استاندارد PRoot (بدون تغییرات اشتباه قبلی)
             val args = arrayOf(
                 prootBin.absolutePath,
                 "--link2symlink",
                 "-0",
                 "-r", alpineRoot.absolutePath,
-                "-b", "/dev", "-b", "/proc", "-b", "/sys",
-                "-b", "/dev/pts", "-b", "/dev/shm",
+                "-b", "/dev",
+                "-b", "/proc",
+                "-b", "/sys",
                 "-w", "/root",
                 "/bin/sh", "-l"
             )
