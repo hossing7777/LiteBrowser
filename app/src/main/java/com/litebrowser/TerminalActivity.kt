@@ -22,20 +22,16 @@ import androidx.core.view.updatePadding
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
-import id.or.oo.pr.engine.ProotLauncher
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import java.io.File
-import kotlin.concurrent.thread
 
 class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private lateinit var terminalView: TerminalView
     private lateinit var hiddenInput: EditText
-    private var prootSession: ProotLauncher.Session? = null
-    private var readerThread: Thread? = null
     private var sessionAttached = false
     private var isHandlingText = false
     private var currentFontSize = 30f
@@ -177,48 +173,61 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     private fun startProotSession(viewWidth: Int, viewHeight: Int) {
         try {
             val app = application as LiteApp
-            val prootLauncher = ProotLauncher(app.getProotHost())
+            val prefixDir = java.io.File(app.filesDir, "usr")
+            val prCli = java.io.File(prefixDir, "bin/pr-cli")
+            val binDir = java.io.File(prefixDir, "bin")
+            val libDir = java.io.File(prefixDir, "lib")
+            val homeDir = java.io.File(app.filesDir, "home")
+            val cacheDir = app.cacheDir
+
+            Logger.i("TerminalActivity", "pr-cli exists: ${prCli.exists()}, size: ${prCli.length()}")
+            Logger.i("TerminalActivity", "homeDir: ${homeDir.absolutePath}, exists: ${homeDir.exists()}")
+            Logger.i("TerminalActivity", "cacheDir: ${cacheDir.absolutePath}")
+
+            // لاگ محیط
+            val envVars = arrayOf(
+                "PATH=${binDir.absolutePath}:/system/bin:/system/xbin",
+                "HOME=${homeDir.absolutePath}",
+                "PREFIX=${prefixDir.absolutePath}",
+                "LD_LIBRARY_PATH=${libDir.absolutePath}",
+                "APP_PREFIX=${prefixDir.absolutePath}",
+                "APP_HOME=${homeDir.absolutePath}",
+                "APP_PACKAGE=${app.packageName}",
+                "PROOT_NO_SECCOMP=1",
+                "PROOT_TMP_DIR=${cacheDir.absolutePath}",
+                "TMPDIR=${cacheDir.absolutePath}",
+                "TERM=xterm-256color",
+                "LANG=en_US.UTF-8",
+                "APP_DNS_SERVERS=" + (app.getProotHost().dnsServers.joinToString(","))
+            )
+            Logger.i("TerminalActivity", "env: ${envVars.joinToString(" | ")}")
 
             terminalView.setTextSize(currentFontSize.toInt())
 
             val cols = (viewWidth / 25).coerceAtLeast(20)
             val rows = (viewHeight / 50).coerceAtLeast(10)
 
-            Logger.i("TerminalActivity", "Starting proot session: alpine ${rows}x${cols}")
-            val session = prootLauncher.startSession("alpine", rows = rows, cols = cols)
+            // مستقیم TerminalSession با pr-cli
+            val session = TerminalSession(
+                prCli.absolutePath,
+                homeDir.absolutePath,
+                arrayOf("login", "alpine", "--user", "root"),
+                envVars,
+                2000,
+                this
+            )
+            session.updateSize(cols, rows)
 
-            if (session == null) {
-                Logger.e("TerminalActivity", "ProotLauncher.startSession returned null")
-                terminalView.mEmulator?.append("\r\n[ERROR] proot session failed\r\n".toByteArray(), 0)
-                return
+            Logger.i("TerminalActivity", "Session running: ${session.isRunning}")
+
+            if (session.isRunning) {
+                terminalSession = session
+                terminalView.attachSession(session)
+                Logger.i("TerminalActivity", "attachSession done")
+                Handler(Looper.getMainLooper()).postDelayed({ showKeyboard() }, 300)
+            } else {
+                Logger.e("TerminalActivity", "Session failed to start. Check log for errors.")
             }
-
-            Logger.i("TerminalActivity", "Proot session started, masterFd=${session.masterFd}, pid=${session.pid}")
-            prootSession = session
-
-            // اتصال: یک thread که از masterFd می‌خونه و به TerminalView می‌فرسته
-            readerThread = thread(name = "proot-reader", isDaemon = true) {
-                val buffer = ByteArray(4096)
-                while (!session.closed) {
-                    try {
-                        val n = session.read(buffer, 0, buffer.size)
-                        if (n < 0) break
-                        if (n > 0) {
-                            val data = buffer.copyOf(n)
-                            Handler(Looper.getMainLooper()).post {
-                                terminalView.mEmulator?.append(data, n)
-                                terminalView.onScreenUpdated()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Logger.e("TerminalActivity", "reader error", e)
-                        break
-                    }
-                }
-            }
-
-            Handler(Looper.getMainLooper()).postDelayed({ showKeyboard() }, 300)
-
         } catch (e: Throwable) {
             Logger.e("TerminalActivity", "startProotSession crashed", e)
         }
@@ -239,7 +248,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 }
             }
             val bytes = finalText.toByteArray(Charsets.UTF_8)
-            prootSession?.write(bytes)
+            terminalSession?.write(bytes, 0, bytes.size)
         } catch (e: Exception) {
             Logger.e("TerminalActivity", "sendToTerminal failed", e)
         }
@@ -263,10 +272,8 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     override fun onDestroy() {
         Logger.i("TerminalActivity", "onDestroy()")
-        try { prootSession?.close() } catch (e: Exception) {}
-        prootSession = null
-        readerThread = null
-        super.onDestroy()
+        try { terminalSession?.finishIfRunning() } catch (e: Exception) {}
+                super.onDestroy()
     }
 
     // ===== TerminalSessionClient (stub - چون TerminalSession نداریم) =====
