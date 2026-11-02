@@ -52,6 +52,10 @@
                 <data android:scheme="https" android:mimeType="text/html" />
             </intent-filter>
         </activity>
-        <activity android:name=".TerminalActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        
+    <activity
+            android:name=".TerminalActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>
