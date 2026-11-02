@@ -5,6 +5,16 @@ plugins {
 android {
     namespace = "com.litebrowser"
     compileSdk = 34
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts += listOf(
+                "**/libpr-cli.so", "**/libbusybox.so",
+                "**/libproot.so", "**/libproot-loader.so"
+            )
+        }
+    }
     defaultConfig {
         applicationId = "com.litebrowser"
         minSdk = 24

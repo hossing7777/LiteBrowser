@@ -17,6 +17,7 @@
 
     <application
         android:name=".LiteApp"
+        android:extractNativeLibs="true"
         android:label="Lite Browser"
         android:icon="@drawable/ic_launcher"
         android:theme="@style/AppTheme"

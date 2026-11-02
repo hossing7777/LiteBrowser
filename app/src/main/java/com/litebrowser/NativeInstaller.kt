@@ -2,66 +2,56 @@ package com.litebrowser
 
 import android.content.Context
 import android.system.Os
-import android.system.OsConstants
 import java.io.File
-import java.io.FileOutputStream
 
 object NativeInstaller {
+    private val FILES = listOf(
+        Triple("libpr-cli.so", "bin/pr-cli", "pr-cli"),
+        Triple("libbusybox.so", "bin/busybox", "busybox"),
+        Triple("libproot.so", "lib/libproot.so", "libproot.so"),
+        Triple("libproot-loader.so", "lib/libproot-loader.so", "libproot-loader.so")
+    )
+
+    fun nativeDir(c: Context) = File(c.applicationInfo.nativeLibraryDir)
+
+    fun prCli(c: Context): File {
+        val n = File(nativeDir(c), "libpr-cli.so")
+        return if (n.exists()) n else File(c.filesDir, "usr/bin/pr-cli")
+    }
 
     fun install(context: Context) {
         try {
             val prefix = File(context.filesDir, "usr")
-            val binDir = File(prefix, "bin")
-            val libDir = File(prefix, "lib")
-            val homeDir = File(context.filesDir, "home")
-            binDir.mkdirs()
-            libDir.mkdirs()
-            homeDir.mkdirs()
+            File(prefix, "bin").mkdirs()
+            File(prefix, "lib").mkdirs()
+            File(context.filesDir, "home").mkdirs()
 
-            // پوشه‌های لازم برای Alpine
             val alpineRoot = File(prefix, "installed/alpine")
-            File(alpineRoot, "tmp").mkdirs()
-            File(alpineRoot, "proc").mkdirs()
-            File(alpineRoot, "sys").mkdirs()
-            File(alpineRoot, "dev").mkdirs()
-            File(alpineRoot, "etc").mkdirs()
+            for (d in listOf("tmp", "proc", "sys", "dev", "etc")) File(alpineRoot, d).mkdirs()
             File(alpineRoot, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
 
-            // کپی از nativeLibraryDir (که اندروید خودش مجوز اجرا داده)
-            val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
-            Logger.i("NativeInstaller", "nativeLibDir: ${nativeLibDir.absolutePath}")
+            val nativeDir = nativeDir(context)
+            Logger.i("NativeInstaller", "nativeLibraryDir=${nativeDir.absolutePath}")
+            Logger.i("NativeInstaller", "contents=${nativeDir.list()?.joinToString(",")}")
 
-            val files = mapOf(
-                "libpr-cli.so" to File(binDir, "pr-cli"),
-                "libbusybox.so" to File(binDir, "busybox"),
-                "libproot.so" to File(libDir, "libproot.so"),
-                "libproot-loader.so" to File(libDir, "libproot-loader.so")
-            )
-
-            for ((srcName, dest) in files) {
-                val src = File(nativeLibDir, srcName)
-                if (!src.exists()) {
-                    Logger.e("NativeInstaller", "Source not found: ${src.absolutePath}")
-                    continue
-                }
+            for ((libName, rel, assetName) in FILES) {
+                val dest = File(prefix, rel)
+                val src = File(nativeDir, libName)
                 try {
-                    if (!dest.exists() || dest.length() != src.length()) {
-                        src.copyTo(dest, overwrite = true)
-                        Logger.i("NativeInstaller", "${dest.name} copied (${dest.length()} bytes)")
+                    if (src.exists()) {
+                        if (!dest.exists() || dest.length() != src.length()) src.copyTo(dest, overwrite = true)
                     } else {
-                        Logger.i("NativeInstaller", "${dest.name} already exists")
+                        Logger.w("NativeInstaller", "not in nativeDir: $libName, extracting from assets")
+                        context.assets.open("native/arm64-v8a/$assetName").use { i ->
+                            dest.outputStream().use { o -> i.copyTo(o) }
+                        }
                     }
-                    // تنظیم مجوز اجرا با Os.chmod
-                    val mode = OsConstants.S_IRWXU or OsConstants.S_IRGRP or OsConstants.S_IXGRP or OsConstants.S_IROTH or OsConstants.S_IXOTH
-                    Os.chmod(dest.absolutePath, mode)
-                    Logger.i("NativeInstaller", "Os.chmod 0755 ${dest.name}: canExecute=${dest.canExecute()}")
+                    Os.chmod(dest.absolutePath, 493)
+                    Logger.i("NativeInstaller", "OK ${dest.absolutePath} size=${dest.length()}")
                 } catch (e: Exception) {
-                    Logger.e("NativeInstaller", "Failed to install ${dest.name}", e)
+                    Logger.e("NativeInstaller", "Failed ${dest.name}", e)
                 }
             }
-
-            Logger.i("NativeInstaller", "install complete")
-            Logger.i("NativeInstaller", "pr-cli canExecute: ${File(binDir, "pr-cli").canExecute()}")
         } catch (e: Exception) {
             Logger.e("NativeInstaller", "install failed", e)
         }
