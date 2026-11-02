@@ -15,10 +15,8 @@ object DistroInstaller {
 
     fun isInstalled(context: Context): Boolean {
         val rootfs = File(context.filesDir, "usr/var/lib/pr/installed-rootfs/$DISTRO")
-        // ✅ بررسی وجود bin/sh (حتی اگر لینک نمادین باشد)
-        val sh = File(rootfs, "bin/sh")
-        val busybox = File(rootfs, "bin/busybox")
-        return sh.exists() || busybox.exists()
+        // ✅ بررسی فایل اصلی busybox به جای لینک نمادین sh
+        return File(rootfs, "bin/busybox").exists() || File(rootfs, "etc/alpine-release").exists()
     }
 
     fun install(context: Context, onProgress: (String) -> Unit = {}) {
@@ -76,13 +74,14 @@ object DistroInstaller {
                 }
             }
 
-            val shFile = File(installed, "bin/sh")
-            if (shFile.exists()) {
+            // ✅ بررسی نهایی با busybox
+            val busyboxFile = File(installed, "bin/busybox")
+            if (busyboxFile.exists()) {
                 Logger.i("DistroInstaller", "✅ Alpine installed successfully.")
                 onProgress("Done.")
             } else {
-                Logger.e("DistroInstaller", "❌ bin/sh still missing!")
-                onProgress("Error: bin/sh not found")
+                Logger.e("DistroInstaller", "❌ busybox still missing!")
+                onProgress("Error: busybox not found")
             }
             
         } catch (e: Exception) {

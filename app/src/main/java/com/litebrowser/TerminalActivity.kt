@@ -96,7 +96,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             if (!prootLoader.exists()) throw IllegalStateException("proot-loader not found at $prootLoader")
 
             val alpineRoot = File(prefixDir, "var/lib/pr/installed-rootfs/alpine")
-            if (!File(alpineRoot, "bin/sh").exists()) throw IllegalStateException("Alpine not installed")
+            if (!File(alpineRoot, "bin/busybox").exists()) throw IllegalStateException("Alpine not installed")
 
             val envVars = arrayOf(
                 "PATH=${nativeDir}:${prefixDir.absolutePath}/bin:/system/bin:/system/xbin",
