@@ -88,7 +88,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val binDir = File(prefixDir, "bin")
             val libDir = File(prefixDir, "lib")
             val homeDir = File(app.filesDir, "home").also { it.mkdirs() }
-            val tmpDir = File(app.filesDir, "tmp").also { it.mkdirs() }
+            val tmpDir = File(app.cacheDir, "proot-tmp").also { it.mkdirs() }
             val nativeDir = app.applicationInfo.nativeLibraryDir
             val alpineRoot = File(prefixDir, "var/lib/pr/installed-rootfs/alpine")
 

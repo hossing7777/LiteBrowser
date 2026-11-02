@@ -15,30 +15,20 @@ object NativeInstaller {
     fun nativeDir(c: Context) = File(c.applicationInfo.nativeLibraryDir)
 
     fun prCli(c: Context): File {
-        // ۱. اول nativeLibraryDir رو چک کن
         val native = File(nativeDir(c), "libpr-cli.so")
-        if (native.exists()) {
-            Logger.i("NativeInstaller", "prCli: using nativeLibraryDir: ${native.absolutePath}")
-            return native
-        }
-        // ۲. بعد /data/local/tmp رو چک کن (اگر دسترسی داریم)
+        if (native.exists()) return native
         val tmp = File("/data/local/tmp/libpr-cli.so")
-        if (tmp.exists() && tmp.canExecute()) {
-            Logger.i("NativeInstaller", "prCli: using /data/local/tmp: ${tmp.absolutePath}")
-            return tmp
-        }
-        // ۳. در نهایت، کپی به /data/local/tmp
+        if (tmp.exists() && tmp.canExecute()) return tmp
         try {
             val src = File(c.filesDir, "usr/bin/pr-cli")
             if (src.exists()) {
                 tmp.parentFile?.mkdirs()
                 src.copyTo(tmp, overwrite = true)
-                Os.chmod(tmp.absolutePath, 493) // 0755
-                Logger.i("NativeInstaller", "prCli: copied to /data/local/tmp: ${tmp.absolutePath}, canExecute=${tmp.canExecute()}")
+                Os.chmod(tmp.absolutePath, 493)
                 return tmp
             }
         } catch (e: Exception) {
-            Logger.e("NativeInstaller", "prCli: failed to copy to /data/local/tmp", e)
+            Logger.e("NativeInstaller", "prCli copy failed", e)
         }
         return File(c.filesDir, "usr/bin/pr-cli")
     }
@@ -49,14 +39,13 @@ object NativeInstaller {
             File(prefix, "bin").mkdirs()
             File(prefix, "lib").mkdirs()
             File(context.filesDir, "home").mkdirs()
+            File(context.cacheDir, "proot-tmp").mkdirs() // ساخت پوشه امن موقت
 
             val alpineRoot = File(prefix, "var/lib/pr/installed-rootfs/alpine")
             for (d in listOf("tmp", "proc", "sys", "dev", "etc")) File(alpineRoot, d).mkdirs()
             File(alpineRoot, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
 
             val nativeDir = nativeDir(context)
-            Logger.i("NativeInstaller", "nativeLibraryDir=${nativeDir.absolutePath}")
-            Logger.i("NativeInstaller", "contents=${nativeDir.list()?.joinToString(",")}")
 
             for ((libName, rel, assetName) in FILES) {
                 val dest = File(prefix, rel)
@@ -64,15 +53,15 @@ object NativeInstaller {
                 try {
                     if (src.exists()) {
                         if (dest.exists()) dest.delete()
-                    Os.symlink(src.absolutePath, dest.absolutePath)
+                        src.copyTo(dest, overwrite = true)
                     } else {
-                        Logger.w("NativeInstaller", "not in nativeDir: $libName, extracting from assets")
+                        if (dest.exists()) dest.delete()
                         context.assets.open("native/arm64-v8a/$assetName").use { i ->
                             dest.outputStream().use { o -> i.copyTo(o) }
                         }
                     }
                     Os.chmod(dest.absolutePath, 493)
-                    Logger.i("NativeInstaller", "OK ${dest.absolutePath} size=${dest.length()}")
+                    Logger.i("NativeInstaller", "OK ${dest.absolutePath}")
                 } catch (e: Exception) {
                     Logger.e("NativeInstaller", "Failed ${dest.name}", e)
                 }
