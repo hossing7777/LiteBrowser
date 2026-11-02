@@ -7,7 +7,6 @@
     android:background="#000000"
     android:fitsSystemWindows="true">
 
-    <!-- نوار عنوان (بالا) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -24,7 +23,6 @@
             android:textSize="20sp"
             android:textStyle="bold"
             android:minWidth="48dp"
-            android:paddingHorizontal="12dp"
             android:backgroundTint="#333333"
             android:textColor="#FFFFFF" />
 
@@ -44,13 +42,10 @@
             android:text="⌨"
             android:textSize="18sp"
             android:minWidth="48dp"
-            android:paddingHorizontal="12dp"
             android:backgroundTint="#333333"
             android:textColor="#FFFFFF" />
-
     </LinearLayout>
 
-    <!-- ناحیه ترمینال -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -68,22 +63,17 @@
             android:id="@+id/hidden_input"
             android:layout_width="1dp"
             android:layout_height="1dp"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
             android:alpha="0"
             android:background="@android:color/transparent"
             android:inputType="text"
-            android:imeOptions="actionGo|flagNoExtractUi|flagNoFullscreen"
+            android:imeOptions="flagNoExtractUi|flagNoFullscreen"
             android:focusable="true"
             android:focusableInTouchMode="true"
             android:singleLine="true"
             android:cursorVisible="false" />
-
     </FrameLayout>
 
-    <!-- نوار دکمه‌های اضافی (پایین، بالای کیبورد) -->
     <HorizontalScrollView
-        android:id="@+id/extra_keys_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="#2b2b2b"
@@ -95,82 +85,23 @@
             android:orientation="horizontal"
             android:padding="2dp">
 
-            <Button
-                android:id="@+id/btn_esc"
-                style="@style/ExtraKeyButton"
-                android:text="ESC" />
-            <Button
-                android:id="@+id/btn_tab"
-                style="@style/ExtraKeyButton"
-                android:text="TAB" />
-            <Button
-                android:id="@+id/btn_ctrl"
-                style="@style/ExtraKeyButton"
-                android:text="CTRL" />
-            <Button
-                android:id="@+id/btn_alt"
-                style="@style/ExtraKeyButton"
-                android:text="ALT" />
-            <Button
-                android:id="@+id/btn_up"
-                style="@style/ExtraKeyButton"
-                android:text="↑" />
-            <Button
-                android:id="@+id/btn_down"
-                style="@style/ExtraKeyButton"
-                android:text="↓" />
-            <Button
-                android:id="@+id/btn_left"
-                style="@style/ExtraKeyButton"
-                android:text="←" />
-            <Button
-                android:id="@+id/btn_right"
-                style="@style/ExtraKeyButton"
-                android:text="→" />
-            <Button
-                android:id="@+id/btn_home"
-                style="@style/ExtraKeyButton"
-                android:text="HOME" />
-            <Button
-                android:id="@+id/btn_end"
-                style="@style/ExtraKeyButton"
-                android:text="END" />
-            <Button
-                android:id="@+id/btn_ctrl_c"
-                style="@style/ExtraKeyButton"
-                android:text="^C"
-                android:textColor="#FF6B6B" />
-            <Button
-                android:id="@+id/btn_clear"
-                style="@style/ExtraKeyButton"
-                android:text="CLR" />
-
-            <Button
-                android:id="@+id/btn_slash"
-                style="@style/ExtraKeyButton"
-                android:text="/" />
-
-            <Button
-                android:id="@+id/btn_backslash"
-                style="@style/ExtraKeyButton"
-                android:text="\\" />
-
-            <Button
-                android:id="@+id/btn_pipe"
-                style="@style/ExtraKeyButton"
-                android:text="|" />
-
-            <Button
-                android:id="@+id/btn_tilde"
-                style="@style/ExtraKeyButton"
-                android:text="~" />
-
-            <Button
-                android:id="@+id/btn_dash"
-                style="@style/ExtraKeyButton"
-                android:text="-" />
-
+            <Button android:id="@+id/btn_esc" style="@style/ExtraKeyButton" android:text="ESC" />
+            <Button android:id="@+id/btn_tab" style="@style/ExtraKeyButton" android:text="TAB" />
+            <Button android:id="@+id/btn_ctrl" style="@style/ExtraKeyButton" android:text="CTRL" />
+            <Button android:id="@+id/btn_alt" style="@style/ExtraKeyButton" android:text="ALT" />
+            <Button android:id="@+id/btn_up" style="@style/ExtraKeyButton" android:text="↑" />
+            <Button android:id="@+id/btn_down" style="@style/ExtraKeyButton" android:text="↓" />
+            <Button android:id="@+id/btn_left" style="@style/ExtraKeyButton" android:text="←" />
+            <Button android:id="@+id/btn_right" style="@style/ExtraKeyButton" android:text="→" />
+            <Button android:id="@+id/btn_home" style="@style/ExtraKeyButton" android:text="HOME" />
+            <Button android:id="@+id/btn_end" style="@style/ExtraKeyButton" android:text="END" />
+            <Button android:id="@+id/btn_ctrl_c" style="@style/ExtraKeyButton" android:text="^C" android:textColor="#FF6B6B" />
+            <Button android:id="@+id/btn_clear" style="@style/ExtraKeyButton" android:text="CLR" />
+            <Button android:id="@+id/btn_slash" style="@style/ExtraKeyButton" android:text="/" />
+            <Button android:id="@+id/btn_backslash" style="@style/ExtraKeyButton" android:text="\\" />
+            <Button android:id="@+id/btn_pipe" style="@style/ExtraKeyButton" android:text="|" />
+            <Button android:id="@+id/btn_tilde" style="@style/ExtraKeyButton" android:text="~" />
+            <Button android:id="@+id/btn_dash" style="@style/ExtraKeyButton" android:text="-" />
         </LinearLayout>
     </HorizontalScrollView>
-
 </LinearLayout>
