@@ -10,9 +10,12 @@ android {
         jniLibs {
             useLegacyPackaging = true
             pickFirsts += listOf(
-                "**/libpr-cli.so", "**/libbusybox.so",
-                "**/libproot.so", "**/libproot-loader.so",
-                "**/libtalloc.so" // ← اضافه شدن libtalloc
+                "**/libpr-cli.so", 
+                "**/libbusybox.so",
+                "**/libproot.so", 
+                "**/libproot-loader.so",
+                "**/libtalloc.so", 
+                "**/libtalloc.so.2"
             )
         }
     }
@@ -24,13 +27,16 @@ android {
         versionName = "1.0"
     }
     androidResources {
-        noCompress += listOf("pr-cli", "busybox", "libproot.so", "libproot-loader.so", "libtalloc.so")
+        noCompress += listOf(
+            "pr-cli", "busybox", "libproot.so", 
+            "libproot-loader.so", "libtalloc.so", "libtalloc.so.2"
+        )
     }
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug") // installable release; replace for Play Store
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
