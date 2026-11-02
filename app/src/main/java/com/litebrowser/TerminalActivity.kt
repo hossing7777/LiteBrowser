@@ -130,46 +130,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 }
             })
 
-            hiddenInput.setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE ||
-                    actionId == EditorInfo.IME_ACTION_NEXT || actionId == EditorInfo.IME_ACTION_SEND ||
-                    actionId == EditorInfo.IME_NULL) {
-                    sendToTerminal("\r")
-                    true
-                } else false
-            }
-
-            hiddenInput.setOnKeyListener { _, keyCode, event ->
-                if (event.action == KeyEvent.ACTION_DOWN) {
-                    when (keyCode) {
-                        KeyEvent.KEYCODE_DEL -> { sendToTerminal("\u007F"); true }
-                        KeyEvent.KEYCODE_ENTER -> { sendToTerminal("\r"); true }
-                        else -> false
-                    }
-                } else false
-            }
-
-            hiddenInput.setOnFocusChangeListener { _, hasFocus ->
-                if (!hasFocus) hiddenInput.postDelayed({ showKeyboard() }, 100)
-            }
-
-            terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
-                override fun onLayoutChange(
-                    v: View, left: Int, top: Int, right: Int, bottom: Int,
-                    oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
-                ) {
-                    if ((right - left) > 0 && (bottom - top) > 0 && !sessionAttached) {
-                        sessionAttached = true
-                        v.removeOnLayoutChangeListener(this)
-                        startProotSession(right - left, bottom - top)
-                    }
                 }
-            })
-
-        } catch (e: Throwable) {
-            Logger.e("TerminalActivity", "onCreate failed", e)
-        }
-    }
 
     private fun startProotSession(viewWidth: Int, viewHeight: Int) {
         try {
