@@ -214,7 +214,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val session = TerminalSession(
                 prCli.absolutePath,
                 cwdDir.absolutePath,
-                arrayOf("login", "alpine", "--user", "root"),
+                arrayOf("login"),
                 envVars,
                 2000,
                 this
