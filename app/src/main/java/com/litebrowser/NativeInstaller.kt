@@ -27,33 +27,13 @@ object NativeInstaller {
             
             File(alpineRoot, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
 
+            // کپی کردن فقط busybox (در صورت نیاز) به پوشه files
             val nativeDir = nativeDir(context)
             val busyboxDest = File(prefix, "bin/busybox")
             val busyboxSrc = File(nativeDir, "libbusybox.so")
             if (busyboxSrc.exists()) {
                 busyboxSrc.copyTo(busyboxDest, overwrite = true)
-                Os.chmod(busyboxDest.absolutePath, 493)
-            }
-
-            val prootDest = File(prefix, "bin/proot")
-            val prootSrc = File(nativeDir, "libproot.so")
-            if (prootSrc.exists()) {
-                prootSrc.copyTo(prootDest, overwrite = true)
-                Os.chmod(prootDest.absolutePath, 493)
-            }
-
-            val prootLoaderDest = File(prefix, "bin/proot-loader")
-            val prootLoaderSrc = File(nativeDir, "libproot-loader.so")
-            if (prootLoaderSrc.exists()) {
-                prootLoaderSrc.copyTo(prootLoaderDest, overwrite = true)
-                Os.chmod(prootLoaderDest.absolutePath, 493)
-            }
-
-            val prCliDest = File(prefix, "bin/pr-cli")
-            val prCliSrc = File(nativeDir, "libpr-cli.so")
-            if (prCliSrc.exists()) {
-                prCliSrc.copyTo(prCliDest, overwrite = true)
-                Os.chmod(prCliDest.absolutePath, 493)
+                Os.chmod(busyboxDest.absolutePath, 493) // 0755
             }
 
         } catch (e: Exception) {

@@ -86,27 +86,21 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val app = application as LiteApp
             val prefixDir = File(app.filesDir, "usr")
             val homeDir = File(app.filesDir, "home").also { it.mkdirs() }
-            
-            // مسیر دایرکتوری موقت PRoot
             val tmpDir = File(app.cacheDir, "proot-tmp").also { it.mkdirs() }
-            tmpDir.setReadable(true, false)
-            tmpDir.setWritable(true, false)
-            tmpDir.setExecutable(true, false)
-
             val nativeDir = app.applicationInfo.nativeLibraryDir
 
-            // مسیر PRoot و Loader (که در NativeInstaller کپی شده‌اند)
-            val prootBin = File(prefixDir, "bin/proot")
+            // اجرای مستقیم proot از nativeLibraryDir برای دور زدن محدودیت اندروید ۱۰+
+            val prootBin = File(nativeDir, "libproot.so")
             if (!prootBin.exists()) throw IllegalStateException("proot not found at $prootBin")
 
-            val prootLoader = File(prefixDir, "bin/proot-loader")
+            val prootLoader = File(nativeDir, "libproot-loader.so")
             if (!prootLoader.exists()) throw IllegalStateException("proot-loader not found at $prootLoader")
 
             val alpineRoot = File(prefixDir, "var/lib/pr/installed-rootfs/alpine")
             if (!File(alpineRoot, "bin/sh").exists()) throw IllegalStateException("Alpine not installed")
 
             val envVars = arrayOf(
-                "PATH=${prefixDir.absolutePath}/bin:/system/bin:/system/xbin",
+                "PATH=${nativeDir}:${prefixDir.absolutePath}/bin:/system/bin:/system/xbin",
                 "HOME=${homeDir.absolutePath}",
                 "PREFIX=${prefixDir.absolutePath}",
                 "LD_LIBRARY_PATH=${nativeDir}",
@@ -126,7 +120,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val cols = (viewWidth / (currentFontSize * 0.62f)).toInt().coerceIn(20, 200)
             val rows = (viewHeight / (currentFontSize * 1.35f)).toInt().coerceIn(8, 100)
 
-            // آرگومان‌های صحیح برای اجرای PRoot
+            // ساخت آرگومان‌ها برای proot
             val args = arrayOf(
                 prootBin.absolutePath,
                 "--link2symlink",
