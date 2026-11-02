@@ -117,7 +117,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val cols = (viewWidth / (currentFontSize * 0.62f)).toInt().coerceIn(20, 200)
             val rows = (viewHeight / (currentFontSize * 1.35f)).toInt().coerceIn(8, 100)
 
-            val session = TerminalSession(prCli.absolutePath, homeDir.absolutePath, arrayOf("login", "alpine"), envVars, 2000, this)
+            val session = TerminalSession(prCli.absolutePath, homeDir.absolutePath, arrayOf("pr-cli", "login", "alpine"), envVars, 2000, this)
             if (!session.isRunning) throw IllegalStateException("Terminal failed")
             
             session.updateSize(cols, rows)
