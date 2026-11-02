@@ -63,7 +63,8 @@ object NativeInstaller {
                 val src = File(nativeDir, libName)
                 try {
                     if (src.exists()) {
-                        if (!dest.exists() || dest.length() != src.length()) src.copyTo(dest, overwrite = true)
+                        if (dest.exists()) dest.delete()
+                    Os.symlink(src.absolutePath, dest.absolutePath)
                     } else {
                         Logger.w("NativeInstaller", "not in nativeDir: $libName, extracting from assets")
                         context.assets.open("native/arm64-v8a/$assetName").use { i ->

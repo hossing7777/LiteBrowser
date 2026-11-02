@@ -88,7 +88,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             val binDir = File(prefixDir, "bin")
             val libDir = File(prefixDir, "lib")
             val homeDir = File(app.filesDir, "home").also { it.mkdirs() }
-            val cacheDir = app.cacheDir
+            val tmpDir = File(app.filesDir, "tmp").also { it.mkdirs() }
             val nativeDir = app.applicationInfo.nativeLibraryDir
             val alpineRoot = File(prefixDir, "var/lib/pr/installed-rootfs/alpine")
 
@@ -106,8 +106,10 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "APP_PACKAGE=${app.packageName}",
                 "PROOT_LOADER=$nativeDir/libproot-loader.so",
                 "PROOT_NO_SECCOMP=1",
-                "PROOT_TMP_DIR=${cacheDir.absolutePath}",
-                "TMPDIR=${cacheDir.absolutePath}",
+                "PROOT_TMP_DIR=${tmpDir.absolutePath}",
+                "TMPDIR=${tmpDir.absolutePath}",
+                "PROOT_L2S_DIR=${tmpDir.absolutePath}",
+                "PROOT_IGNORE_MISSING_BINDINGS=1",
                 "TERM=xterm-256color",
                 "LANG=C.UTF-8",
                 "LC_ALL=C.UTF-8"
