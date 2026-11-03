@@ -17,7 +17,6 @@ import android.widget.TextView
 import android.widget.Toast
 import com.termux.terminal.TerminalSession
 import java.io.File
-import kotlin.concurrent.thread
 
 class AgentActivity : Activity() {
 
@@ -31,9 +30,6 @@ class AgentActivity : Activity() {
     private var isPageLoaded = false
     private val logBuilder = StringBuilder()
 
-    private val outFile by lazy { File(filesDir, "home/agent_out.txt") }
-    private val agentCodeFile by lazy { File(filesDir, "home/agent_code.txt") } // فایل بافر
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Logger.i("Agent", "AgentActivity onCreate started")
@@ -45,15 +41,13 @@ class AgentActivity : Activity() {
         webView = findViewById(R.id.agent_webview)
         progressBar = findViewById(R.id.agent_progress)
 
-        // ✅ افزایش ارتفاع WebView در کد به ۱۲۰۰ پیکسل تا دیپ‌سیک پاسخ را رندر کند
+        // ارتفاع WebView را زیاد می‌کنیم تا دیپ‌سیک پاسخ را کاملاً رندر کند
         val params = webView.layoutParams
         params.height = 1200
         webView.layoutParams = params
 
         handler.postDelayed({
-            Logger.i("Agent", "Setting up WebView")
             setupWebView()
-            Logger.i("Agent", "Loading DeepSeek URL")
             webView.loadUrl("https://chat.deepseek.com/")
         }, 800)
 
@@ -73,12 +67,10 @@ class AgentActivity : Activity() {
                 Toast.makeText(this, "لطفا یک درخواست وارد کنید", Toast.LENGTH_SHORT).show()
             }
         }
-        Logger.i("Agent", "AgentActivity onCreate finished")
     }
 
     private fun ensureTerminalSession() {
         if (TerminalManager.sessions.isEmpty() || TerminalManager.sessions.firstOrNull()?.isRunning == false) {
-            Logger.i("Agent", "No active terminal session. Creating a new one...")
             val app = application as LiteApp
             val prefixDir = File(app.filesDir, "usr")
             val homeDir = File(app.filesDir, "home").also { it.mkdirs() }
@@ -118,48 +110,32 @@ class AgentActivity : Activity() {
 
             val session = TerminalSession(prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager)
             TerminalManager.addSession(session)
-            Logger.i("Agent", "New terminal session created with Download mounted.")
-        } else {
-            Logger.i("Agent", "Terminal session already active.")
         }
     }
 
     private fun setupWebView() {
-        try {
-            webView.settings.javaScriptEnabled = true
-            webView.settings.domStorageEnabled = true
-            val cookieManager = CookieManager.getInstance()
-            cookieManager.setAcceptCookie(true)
-            cookieManager.setAcceptThirdPartyCookies(webView, true)
+        webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(webView, true)
 
-            webView.addJavascriptInterface(WebAppInterface(this, webView), "AndroidBridge")
-            
-            webView.webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                    super.onPageStarted(view, url, favicon)
-                    runOnUiThread { progressBar.visibility = View.VISIBLE }
-                    isPageLoaded = false
-                }
-
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    runOnUiThread { progressBar.visibility = View.GONE }
-                    isPageLoaded = true
-                    Logger.i("Agent", "WebView loading finished: $url")
-                    log("✅ DeepSeek page loaded. Ready to start.")
-                }
+        webView.addJavascriptInterface(WebAppInterface(this, webView), "AndroidBridge")
+        
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                runOnUiThread { progressBar.visibility = View.VISIBLE }
+                isPageLoaded = false
             }
-        } catch (e: Exception) {
-            Logger.e("Agent", "Failed to setup WebView", e)
-        }
 
-        handler.postDelayed({
-            if (!isPageLoaded) {
-                isPageLoaded = true
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
                 runOnUiThread { progressBar.visibility = View.GONE }
-                log("⚠️ Page load timeout. Proceeding...")
+                isPageLoaded = true
+                log("✅ DeepSeek page loaded. Ready to start.")
             }
-        }, 5000)
+        }
     }
 
     private fun log(msg: String) {
@@ -177,8 +153,6 @@ class AgentActivity : Activity() {
         isRunning = true
         logBuilder.clear()
         log("🤖 Starting Agent with task: $prompt\n")
-        Logger.i("Agent", "startAgent called with prompt: $prompt")
-        
         ensureTerminalSession()
 
         val systemPrompt = """
@@ -197,60 +171,46 @@ class AgentActivity : Activity() {
     }
 
     private fun sendToAI(text: String) {
-        Logger.i("Agent", "sendToAI called. Sending prompt to DeepSeek...")
         log("📤 Sending prompt to AI...")
-        
         val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         
         val js = """
             (function() {
                 try {
-                    var base64Text = "$base64Prompt";
-                    var text = decodeURIComponent(escape(atob(base64Text)));
-                    
-                    var ta = document.querySelector('textarea');
-                    if (!ta) {
-                        ta = document.querySelector('div[contenteditable="true"]');
-                        if (ta) {
-                            ta.focus();
-                            ta.innerText = text;
-                            ta.dispatchEvent(new Event('input', { bubbles: true }));
-                        } else {
-                            AndroidBridge.onAgentError("Input field not found.");
-                            return;
-                        }
-                    } else {
+                    var text = decodeURIComponent(escape(atob("$base64Prompt")));
+                    var ta = document.querySelector('textarea') || document.querySelector('div[contenteditable="true"]');
+                    if (ta) {
                         ta.focus();
-                        var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                        nativeSetter.call(ta, text);
+                        if (ta.tagName === 'TEXTAREA') {
+                            var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                            nativeSetter.call(ta, text);
+                        } else {
+                            ta.innerText = text;
+                        }
                         ta.dispatchEvent(new Event('input', { bubbles: true }));
                         ta.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                    
-                    setTimeout(function() {
-                        ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                        var buttons = document.querySelectorAll('button, div[role="button"]');
-                        var clicked = false;
-                        for (var i = buttons.length - 1; i >= 0; i--) {
-                            var btn = buttons[i];
-                            if (btn.innerHTML.includes('svg') && btn.offsetWidth > 0) {
-                                var rect = btn.getBoundingClientRect();
-                                var taRect = ta.getBoundingClientRect();
-                                if (rect.left > taRect.left + (taRect.width / 2) && rect.top > taRect.top) {
-                                    btn.click();
-                                    clicked = true;
-                                    break;
+                        
+                        setTimeout(function() {
+                            ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+                            var buttons = document.querySelectorAll('button, div[role="button"]');
+                            for (var i = buttons.length - 1; i >= 0; i--) {
+                                var btn = buttons[i];
+                                if (btn.innerHTML.includes('svg') && btn.offsetWidth > 0) {
+                                    var rect = btn.getBoundingClientRect();
+                                    var taRect = ta.getBoundingClientRect();
+                                    if (rect.left > taRect.left + (taRect.width / 2) && rect.top > taRect.top) {
+                                        btn.click();
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        AndroidBridge.logDebug("Send button clicked: " + clicked);
-                    }, 500);
+                        }, 500);
+                    }
                 } catch(e) {
                     AndroidBridge.onAgentError("JS Exception: " + e.message);
                 }
             })();
         """.trimIndent()
-        
         webView.evaluateJavascript(js, null)
     }
 
@@ -259,13 +219,9 @@ class AgentActivity : Activity() {
 
     private fun checkAiResponse() {
         if (!isRunning) return
-        
         aiCheckAttempts++
-        if (aiCheckAttempts % 5 == 0) {
-            Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts, emptyAttempts=$emptyAttempts")
-        }
-        if (aiCheckAttempts > 300) { // ۵ دقیقه تایم‌اوت کلی
-            Logger.e("Agent", "Total timeout waiting for AI response.")
+        
+        if (aiCheckAttempts > 180) {
             log("❌ Error: Total timeout waiting for AI response.")
             isRunning = false
             return
@@ -274,45 +230,45 @@ class AgentActivity : Activity() {
         val js = """
             (function() {
                 try {
-                    // اسکرول به پایین برای رندر شدن پاسخ
                     window.scrollTo(0, document.body.scrollHeight);
-                    
                     var codeText = "";
                     var hasCode = false;
-                    var isGenerating = false;
                     
+                    // استخراج از تگ pre (مهم‌ترین بخش)
                     var pres = document.querySelectorAll('pre');
                     if (pres.length > 0) {
                         var lastPre = pres[pres.length - 1];
                         codeText = lastPre.innerText || lastPre.textContent || "";
-                        codeText = codeText.replace(/Copy/g, "").replace(/Download/g, "").trim();
+                        // فقط دکمه Copy را حذف می‌کنیم. Download را دست نمی‌زنیم چون بخشی از مسیر است!
+                        codeText = codeText.replace(/^Copy\s*\n?/i, "").trim();
                         hasCode = true;
                     } else {
-                        var bodyText = document.body.innerText || "";
-                        var regex = /```(?:bash|sh|shell|console)?\s*([\s\S]*?)```/g;
-                        var match;
-                        while ((match = regex.exec(bodyText)) !== null) {
-                            codeText = match[1].trim();
-                            hasCode = true;
+                        // اگر pre نبود، مارک‌داون را بگیر
+                        var markdowns = document.querySelectorAll('.ds-markdown, div[class*="markdown"]');
+                        if (markdowns.length > 0) {
+                            var lastMd = markdowns[markdowns.length - 1];
+                            var text = lastMd.innerText || lastMd.textContent || "";
+                            var match = text.match(/```(?:bash|sh|shell)?\s*([\s\S]*?)```/);
+                            if (match) {
+                                codeText = match[1].trim();
+                                hasCode = true;
+                            }
                         }
                     }
                     
+                    var isGenerating = false;
                     var bodyText = document.body.innerText || "";
-                    if (bodyText.includes("Thinking...") || bodyText.includes("Thought for") || bodyText.includes("در حال فکر کردن")) {
+                    if (bodyText.includes("Thinking...") || bodyText.includes("Thought for")) {
                         isGenerating = true;
                     }
-                    if (bodyText.endsWith("●") || bodyText.endsWith("▍") || bodyText.endsWith("_")) {
+                    if (codeText.endsWith("●") || codeText.endsWith("▍") || codeText.endsWith("_")) {
                         isGenerating = true;
                     }
                     
-                    // ✅ ارسال کد به کاتلین از طریق فایل (بدون محدودیت طول)
-                    if (hasCode && !isGenerating) {
-                        AndroidBridge.saveAgentCode(codeText);
-                    }
-                    
-                    return JSON.stringify({ isGenerating: isGenerating, hasCode: hasCode });
+                    var b64 = btoa(unescape(encodeURIComponent(codeText)));
+                    return JSON.stringify({ text: b64, isGenerating: isGenerating, hasCode: hasCode });
                 } catch(e) {
-                    return JSON.stringify({ isGenerating: false, hasCode: false, jsError: String(e) });
+                    return JSON.stringify({ text: "", isGenerating: true, hasCode: false });
                 }
             })();
         """.trimIndent()
@@ -330,119 +286,104 @@ class AgentActivity : Activity() {
             try {
                 val jsonObj = org.json.JSONObject(cleanJson)
                 val hasCode = jsonObj.getBoolean("hasCode")
+                val base64Text = jsonObj.getString("text")
                 val isGenerating = jsonObj.getBoolean("isGenerating")
-                val jsError = jsonObj.optString("jsError", "")
                 
-                if (jsError.isNotEmpty()) {
-                    Logger.e("Agent", "JS error during polling: $jsError")
-                }
+                val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
+                val text = String(decodedBytes, Charsets.UTF_8).trim()
                 
-                // اگر در حال تولید است، تایمر خالی بودن را ریست می‌کنیم
                 if (isGenerating) {
                     emptyAttempts = 0
                     handler.postDelayed({ checkAiResponse() }, 1000)
                     return@evaluateJavascript
                 }
                 
-                // ✅ اگر کد پیدا شد، آن را از فایل می‌خوانیم
-                if (hasCode && agentCodeFile.exists()) {
-                    val command = agentCodeFile.readText().trim()
-                    agentCodeFile.delete()
-                    
-                    if (command.isNotEmpty()) {
-                        log("📥 AI response received.")
-                        aiCheckAttempts = 0
-                        emptyAttempts = 0
-                        processAiResponse(command)
+                if (!hasCode || text.isEmpty()) {
+                    emptyAttempts++
+                    if (emptyAttempts > 60) { // ۶۰ ثانیه فرصت
+                        log("❌ Error: DeepSeek did not respond with code.")
+                        isRunning = false
                         return@evaluateJavascript
                     }
-                }
-                
-                emptyAttempts++
-                if (emptyAttempts > 90) { // ۹۰ ثانیه فرصت
-                    Logger.e("Agent", "No AI response text detected after $emptyAttempts attempts.")
-                    log("❌ Error: DeepSeek did not respond. Please check your login, network and try again.")
-                    isRunning = false
+                    handler.postDelayed({ checkAiResponse() }, 1000)
                     return@evaluateJavascript
                 }
                 
+                // کد پیدا شد
+                log("📥 AI response received.")
+                aiCheckAttempts = 0
+                emptyAttempts = 0
+                processAiResponse(text)
+                
             } catch (e: Exception) {
                 Logger.e("Agent", "JSON parse error: ${e.message}")
+                handler.postDelayed({ checkAiResponse() }, 1000)
             }
-            handler.postDelayed({ checkAiResponse() }, 1000)
         }
     }
 
-    private var cmdCheckAttempts = 0
     private fun processAiResponse(command: String) {
-        val filteredCommand = command.lines()
-            .filterNot { it.trim().startsWith("1.") || it.trim().startsWith("2.") || it.trim().startsWith("3.") }
-            .filterNot { it.contains("[INSTRUCTIONS]") }
-            .filterNot { it.contains("[TASK]") }
-            .filterNot { it.contains("The Android Download folder is available at") }
-            .joinToString("\n")
-            .trim()
-
-        if (filteredCommand.isEmpty() || filteredCommand.contains("You are an Alpine Linux terminal bot")) {
-            log("⚠️ AI echoed instructions. Retrying...")
-            sendToAI("[FORMAT ERROR] Output ONLY the bash command.")
-            handler.postDelayed({ checkAiResponse() }, 3000)
-            return
-        }
-
-        log("\n💻 Running Command:\n$filteredCommand\n")
+        log("\n💻 Running Command:\n$command\n")
         
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
-            cmdCheckAttempts = 0
-            val execCmd = "($filteredCommand) > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
+            // ارسال دستور به ترمینال با نشانگرهای خاص
+            val startMarker = "___AGENT_START_123___"
+            val endMarker = "___AGENT_END_123___"
+            val execCmd = "echo \"$startMarker\"; $command; echo \"$endMarker\"\r"
+            
             session.write(execCmd)
-            Logger.i("Agent", "Command sent to terminal.")
             log("⏳ Executing...")
-            handler.postDelayed({ readTerminalOutput() }, 1500)
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1000)
         } else {
-            Logger.e("Agent", "No active terminal session.")
             log("❌ Error: No terminal session.")
             isRunning = false
         }
     }
 
-    private fun readTerminalOutput() {
+    // ✅ خواندن مستقیم از حافظه ترمینال (بدون نیاز به فایل)
+    private fun readTerminalOutput(startMarker: String, endMarker: String, attempts: Int) {
         if (!isRunning) return
         
-        cmdCheckAttempts++
-        if (cmdCheckAttempts > 60) {
-            Logger.e("Agent", "Command execution timeout.")
+        if (attempts > 30) {
             log("❌ Error: Command execution timed out.")
             isRunning = false
             return
         }
 
-        thread {
-            if (outFile.exists()) {
-                val content = outFile.readText()
-                if (content.contains("##DONE##")) {
-                    val output = content.replace("##DONE##", "").trim()
-                    Logger.i("Agent", "Command output: $output")
-                    log("\n📄 Output:\n$output\n")
-                    outFile.delete() 
-                    
-                    val nextPrompt = "Command Output:\n$output\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
-                    runOnUiThread { sendToAI(nextPrompt) }
-                    handler.postDelayed({ checkAiResponse() }, 3000)
-                } else {
-                    handler.postDelayed({ readTerminalOutput() }, 1000)
-                }
+        val session = TerminalManager.sessions.firstOrNull()
+        val screenText = session?.emulator?.screen?.getTranscriptText() ?: ""
+
+        if (screenText.contains(endMarker)) {
+            // استخراج متن بین نشانگرها
+            val startIndex = screenText.indexOf(startMarker)
+            val endIndex = screenText.indexOf(endMarker)
+            
+            var output = if (startIndex != -1 && endIndex != -1) {
+                screenText.substring(startIndex + startMarker.length, endIndex).trim()
             } else {
-                handler.postDelayed({ readTerminalOutput() }, 1000)
+                "Command executed (no output captured)"
             }
+
+            // اگر خروجی خیلی بزرگ بود، خلاصه‌اش کنیم
+            if (output.length > 1500) {
+                output = output.take(1500) + "\n... (output truncated)"
+            }
+
+            log("\n📄 Output:\n$output\n")
+
+            val nextPrompt = "Command Output:\n$output\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
+            sendToAI(nextPrompt)
+            handler.postDelayed({ checkAiResponse() }, 3000)
+        } else {
+            // هنوز دستور تمام نشده، ۱ ثانیه دیگر چک می‌کنیم
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 1000)
         }
     }
 
     override fun onDestroy() {
         isRunning = false
         handler.removeCallbacksAndMessages(null)
-        Logger.i("Agent", "AgentActivity onDestroy")
         super.onDestroy()
     }
 }
