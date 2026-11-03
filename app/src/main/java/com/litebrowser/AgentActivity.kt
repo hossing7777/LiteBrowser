@@ -99,7 +99,6 @@ class AgentActivity : Activity() {
                 "LC_ALL=C.UTF-8"
             )
 
-            // ✅ Mount کردن پوشه Download گوشی به /root/Download در لینوکس
             val args = arrayOf(
                 prootBin.absolutePath, "--link2symlink", "-0",
                 "-r", alpineRoot.absolutePath,
@@ -139,12 +138,23 @@ class AgentActivity : Activity() {
                     super.onPageFinished(view, url)
                     runOnUiThread { progressBar.visibility = View.GONE }
                     isPageLoaded = true
+                    Logger.i("Agent", "WebView loading finished: $url")
                     log("✅ DeepSeek page loaded. Ready to start.")
                 }
             }
         } catch (e: Exception) {
             Logger.e("Agent", "Failed to setup WebView", e)
         }
+
+        // ✅ تایم‌اوت اجباری برای لود صفحه (در صورت عدم اجرای onPageFinished)
+        handler.postDelayed({
+            if (!isPageLoaded) {
+                Logger.w("Agent", "onPageFinished timeout. Forcing page loaded state.")
+                isPageLoaded = true
+                runOnUiThread { progressBar.visibility = View.GONE }
+                log("⚠️ Page load timeout. Proceeding...")
+            }
+        }, 5000)
     }
 
     private fun log(msg: String) {
@@ -197,44 +207,51 @@ class AgentActivity : Activity() {
         
         val js = """
             (function() {
-                var ta = document.querySelector('textarea');
-                if (!ta) {
-                    ta = document.querySelector('div[contenteditable="true"]');
-                    if (ta) {
-                        ta.innerText = "$safePrompt";
-                        ta.dispatchEvent(new Event('input', { bubbles: true }));
+                try {
+                    var ta = document.querySelector('textarea');
+                    if (!ta) {
+                        ta = document.querySelector('div[contenteditable="true"]');
+                        if (ta) {
+                            ta.innerText = "$safePrompt";
+                            ta.dispatchEvent(new Event('input', { bubbles: true }));
+                        } else {
+                            AndroidBridge.onAgentError("Input field not found.");
+                            return;
+                        }
                     } else {
-                        AndroidBridge.onAgentError("Textarea not found. Are you logged in?");
-                        return;
+                        var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                        nativeSetter.call(ta, "$safePrompt");
+                        ta.dispatchEvent(new Event('input', { bubbles: true }));
+                        ta.dispatchEvent(new Event('change', { bubbles: true }));
                     }
-                } else {
-                    var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                    nativeSetter.call(ta, "$safePrompt");
-                    ta.dispatchEvent(new Event('input', { bubbles: true }));
-                    ta.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                
-                setTimeout(function() {
-                    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                    var buttons = document.querySelectorAll('button, div[role="button"]');
-                    var clicked = false;
-                    for (var i = buttons.length - 1; i >= 0; i--) {
-                        var btn = buttons[i];
-                        if (btn.querySelector('svg') && btn.offsetWidth > 0) {
-                            var rect = btn.getBoundingClientRect();
-                            var taRect = ta.getBoundingClientRect();
-                            if (rect.left > taRect.left + (taRect.width / 2)) {
-                                btn.click();
-                                clicked = true;
-                                break;
+                    
+                    setTimeout(function() {
+                        ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+                        var buttons = document.querySelectorAll('button, div[role="button"]');
+                        var clicked = false;
+                        for (var i = buttons.length - 1; i >= 0; i--) {
+                            var btn = buttons[i];
+                            if (btn.querySelector('svg') && btn.offsetWidth > 0) {
+                                var rect = btn.getBoundingClientRect();
+                                var taRect = ta.getBoundingClientRect();
+                                if (rect.left > taRect.left + (taRect.width / 2)) {
+                                    btn.click();
+                                    clicked = true;
+                                    break;
+                                }
                             }
                         }
-                    }
-                }, 500);
+                        AndroidBridge.logDebug("Send button clicked: " + clicked);
+                    }, 500);
+                } catch(e) {
+                    AndroidBridge.onAgentError("JS Exception: " + e.message);
+                }
             })();
         """.trimIndent()
         
-        webView.evaluateJavascript(js, null)
+        webView.evaluateJavascript(js) { result ->
+            Logger.i("Agent", "JS evaluation result: $result")
+        }
     }
 
     private var lastAiText = ""
@@ -245,20 +262,21 @@ class AgentActivity : Activity() {
         if (!isRunning) return
         
         aiCheckAttempts++
-        if (aiCheckAttempts > 120) { // ۲ دقیقه تایم‌اوت
+        if (aiCheckAttempts % 5 == 0) {
+            Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts")
+        }
+        if (aiCheckAttempts > 180) { // ۳ دقیقه تایم‌اوت
             Logger.e("Agent", "Timeout waiting for AI response.")
             log("❌ Error: Timeout waiting for AI response.")
             isRunning = false
             return
         }
 
-        // استفاده از سلکتور قوی‌تر برای خواندن پیام
         val js = """
             (function() {
                 var msgs = document.querySelectorAll('.ds-markdown');
                 if (msgs.length === 0) {
-                    // Fallback: try to find chat bubbles
-                    msgs = document.querySelectorAll('div[class*="message"]');
+                    msgs = document.querySelectorAll('div[class*="markdown"]');
                 }
                 if (msgs.length > 0) {
                     var lastMsg = msgs[msgs.length - 1];
