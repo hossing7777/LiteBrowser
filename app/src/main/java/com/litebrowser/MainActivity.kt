@@ -111,10 +111,29 @@ class MainActivity : Activity() {
                 }
                 
                 setTimeout(function() {
-                    ta.dispatchEvent(new KeyboardEvent('keydown', {
-                        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
-                    }));
+                    // ۱. تلاش برای شبیه‌سازی زدن کلید Enter
+                    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
                     
+                    // ۲. پیدا کردن دکمه ارسال (Send) و کلیک روی آن
+                    var parent = ta.parentNode;
+                    var btnClicked = false;
+                    while (parent && !btnClicked) {
+                        var buttons = parent.querySelectorAll('button');
+                        if (buttons.length > 0) {
+                            // دکمه ارسال معمولاً آخرین دکمه دارای آیکون (SVG) است
+                            for (var i = buttons.length - 1; i >= 0; i--) {
+                                if (buttons[i].querySelector('svg') && !buttons[i].disabled) {
+                                    buttons[i].click();
+                                    btnClicked = true;
+                                    break;
+                                }
+                            }
+                        }
+                        parent = parent.parentNode;
+                        if (parent === document.body) break;
+                    }
+
+                    // ۳. نظارت بر پاسخ دیپ‌سیک
                     var lastText = "";
                     var stableCount = 0;
                     var attempts = 0;
@@ -134,7 +153,7 @@ class MainActivity : Activity() {
                                 lastText = currentText;
                             }
                         }
-                        if (attempts > 120) {
+                        if (attempts > 120) { // ۶۰ ثانیه تایم‌اوت
                             clearInterval(interval);
                             AndroidBridge.onAiError("Timeout waiting for AI response");
                         }
