@@ -271,29 +271,37 @@ class AgentActivity : Activity() {
         if (aiCheckAttempts % 5 == 0) {
             Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts")
         }
-        if (aiCheckAttempts > 180) { // ۳ دقیقه تایم‌اوت
+        if (aiCheckAttempts > 300) { // ۵ دقیقه تایم‌اوت برای حالت DeepThink
             Logger.e("Agent", "Timeout waiting for AI response.")
             log("❌ Error: Timeout waiting for AI response.")
             isRunning = false
             return
         }
 
-        // ✅ استخراج به روش Brute-force: خواندن کل متن و پیدا کردن آخرین بلوک کد
+        // ✅ فقط به دنبال تگ‌های <pre> (بلوک کد) می‌گردیم
         val js = """
             (function() {
                 try {
-                    var clones = document.body.cloneNode(true);
-                    var toRemove = clones.querySelectorAll('textarea, input, header, nav, footer, .ds-icon-button, button, svg');
-                    for(var i=0; i<toRemove.length; i++) { toRemove[i].remove(); }
-                    var text = clones.innerText;
+                    var preBlocks = document.querySelectorAll('pre');
+                    if (preBlocks.length === 0) {
+                        return JSON.stringify({ text: "", isGenerating: true, hasCode: false });
+                    }
+
+                    var lastPre = preBlocks[preBlocks.length - 1];
+                    var codeText = lastPre.innerText || lastPre.textContent || "";
                     
-                    // چک کردن اینکه آیا دکمه Stop (در حال تایپ) وجود دارد
-                    var isGenerating = document.querySelector('button[aria-label*="Stop"], [class*="stop-button"]') !== null;
-                    
-                    var b64 = btoa(unescape(encodeURIComponent(text)));
-                    return JSON.stringify({ text: b64, isGenerating: isGenerating });
+                    // حذف کلمات اضافی که ممکن است در بلوک کد باشند
+                    codeText = codeText.replace(/Copy/g, "").replace(/Download/g, "").trim();
+
+                    var isGenerating = document.querySelector('div[class*="stop"]') !== null || document.querySelector('button[aria-label*="Stop"]') !== null;
+                    if (codeText.endsWith("●") || codeText.endsWith("▍")) {
+                        isGenerating = true;
+                    }
+
+                    var b64 = btoa(unescape(encodeURIComponent(codeText)));
+                    return JSON.stringify({ text: b64, isGenerating: isGenerating, hasCode: true });
                 } catch(e) {
-                    return JSON.stringify({ text: "", isGenerating: true });
+                    return JSON.stringify({ text: "", isGenerating: true, hasCode: false });
                 }
             })();
         """.trimIndent()
@@ -306,13 +314,20 @@ class AgentActivity : Activity() {
                 
                 try {
                     val jsonObj = org.json.JSONObject(cleanJson)
+                    val hasCode = jsonObj.getBoolean("hasCode")
+                    
+                    if (!hasCode) {
+                        handler.postDelayed({ checkAiResponse() }, 1000)
+                        return@evaluateJavascript
+                    }
+
                     val base64Text = jsonObj.getString("text")
                     val isGenerating = jsonObj.getBoolean("isGenerating")
                     
                     val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
-                    val text = String(decodedBytes, Charsets.UTF_8)
+                    val text = String(decodedBytes, Charsets.UTF_8).trim()
                     
-                    if (isGenerating || text.trim().isEmpty()) {
+                    if (isGenerating || text.isEmpty()) {
                         lastAiText = ""
                         stableCounter = 0
                         handler.postDelayed({ checkAiResponse() }, 1000)
@@ -321,29 +336,24 @@ class AgentActivity : Activity() {
                     
                     if (text == lastAiText) {
                         stableCounter++
-                        if (stableCounter >= 4) { // ۴ ثانیه ثابت ماند
-                            Logger.i("Agent", "Stable text detected. Length: ${text.length}")
-                            Logger.d("Agent", "Snippet: ${text.take(300)}")
+                        if (stableCounter >= 2) { // ۲ ثانیه ثابت ماند
+                            Logger.i("Agent", "Stable code block found. Length: ${text.length}")
+                            Logger.d("Agent", "Snippet: ${text.take(200)}")
                             
-                            if (text.contains("```")) {
-                                val regex = Regex("```(?:bash|sh|python)?\\n([\\s\\S]*?)```")
-                                val matches = regex.findAll(text)
-                                val lastMatch = matches.lastOrNull()
-                                
-                                if (lastMatch != null) {
-                                    val command = lastMatch.groupValues[1].trim()
-                                    Logger.i("Agent", "Extracted command: $command")
-                                    log("📥 AI response received.")
-                                    stableCounter = 0
-                                    lastAiText = ""
-                                    aiCheckAttempts = 0
-                                    processAiResponse(command)
-                                    return@evaluateJavascript
-                                }
-                            } else {
-                                Logger.w("Agent", "No code block found in stable text. Waiting for AI to generate code...")
+                            var command = text
+                            // پاک کردن مارک‌داون اگر داخل تگ pre بود
+                            if (command.startsWith("```")) {
+                                command = command.substringAfter("\n").substringBefore("```")
+                            }
+                            command = command.trim()
+                            
+                            if (command.isNotEmpty()) {
+                                log("📥 AI response received.")
                                 stableCounter = 0
                                 lastAiText = ""
+                                aiCheckAttempts = 0
+                                processAiResponse(command)
+                                return@evaluateJavascript
                             }
                         }
                     } else {
