@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebView
@@ -148,7 +149,6 @@ class AgentActivity : Activity() {
 
         handler.postDelayed({
             if (!isPageLoaded) {
-                Logger.w("Agent", "onPageFinished timeout. Forcing page loaded state.")
                 isPageLoaded = true
                 runOnUiThread { progressBar.visibility = View.GONE }
                 log("⚠️ Page load timeout. Proceeding...")
@@ -175,21 +175,28 @@ class AgentActivity : Activity() {
         
         ensureTerminalSession()
 
+        // ✅ دستور سیستم بسیار قوی‌تر برای مجبور کردن هوش مصنوعی به دادن فقط یک بلوک bash
         val systemPrompt = """
             You are an AI autonomous agent operating inside an Alpine Linux terminal.
             Your goal is to complete the user's task by writing and executing bash commands.
-            You MUST respond ONLY with a bash code block like this:
+            
+            CRITICAL RULES:
+            1. You MUST respond ONLY with a single bash code block like this:
             ```bash
             your_command_here
             ```
-            Do not include any explanation or text outside the code block.
-            If the task is completely finished, respond with exactly: TASK_COMPLETE
-            
-            IMPORTANT RULES:
-            1. To install packages, use: `apk add --cache-dir /mnt/cache/apk <package>`
-            2. You are running as root.
+            2. Do NOT include any explanation, thoughts, or text outside the code block.
             3. If a command fails, analyze the error and try again.
-            4. The Android "Download" folder is mounted at `/root/Download`. Save files there if requested.
+            4. You are running as root.
+            5. The Android "Download" folder is mounted at `/root/Download`.
+            6. If the user asks to create a file (e.g., test.py), use:
+               cat << 'EOF' > /root/Download/test.py
+               print("Hello")
+               EOF
+            7. If the user asks to run a script, use:
+               python3 /root/Download/test.py
+            8. If you need to install packages, use: `apk add python3`
+            9. If the task is completely finished, respond with exactly: TASK_COMPLETE
             
             User Task: $prompt
         """.trimIndent()
@@ -202,16 +209,20 @@ class AgentActivity : Activity() {
         Logger.i("Agent", "sendToAI called. Sending prompt to DeepSeek...")
         log("📤 Sending prompt to AI...")
         
-        val safePrompt = text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
+        // تبدیل به Base64 برای جلوگیری از خطای کاراکترهای خاص در جاوااسکریپت
+        val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         
         val js = """
             (function() {
                 try {
+                    var base64Text = "$base64Prompt";
+                    var text = decodeURIComponent(escape(atob(base64Text)));
+                    
                     var ta = document.querySelector('textarea');
                     if (!ta) {
                         ta = document.querySelector('div[contenteditable="true"]');
                         if (ta) {
-                            ta.innerText = "$safePrompt";
+                            ta.innerText = text;
                             ta.dispatchEvent(new Event('input', { bubbles: true }));
                         } else {
                             AndroidBridge.onAgentError("Input field not found.");
@@ -219,7 +230,7 @@ class AgentActivity : Activity() {
                         }
                     } else {
                         var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                        nativeSetter.call(ta, "$safePrompt");
+                        nativeSetter.call(ta, text);
                         ta.dispatchEvent(new Event('input', { bubbles: true }));
                         ta.dispatchEvent(new Event('change', { bubbles: true }));
                     }
@@ -248,9 +259,7 @@ class AgentActivity : Activity() {
             })();
         """.trimIndent()
         
-        webView.evaluateJavascript(js) { result ->
-            Logger.i("Agent", "JS evaluation result: $result")
-        }
+        webView.evaluateJavascript(js, null)
     }
 
     private var lastAiText = ""
@@ -261,9 +270,6 @@ class AgentActivity : Activity() {
         if (!isRunning) return
         
         aiCheckAttempts++
-        if (aiCheckAttempts % 5 == 0) {
-            Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts")
-        }
         if (aiCheckAttempts > 180) { // ۳ دقیقه تایم‌اوت
             Logger.e("Agent", "Timeout waiting for AI response.")
             log("❌ Error: Timeout waiting for AI response.")
@@ -271,36 +277,36 @@ class AgentActivity : Activity() {
             return
         }
 
-        // ✅ استخراج به روش Brute-force: خواندن کل متن و پیدا کردن آخرین بلوک کد در کاتلین
+        // ✅ خواندن کل متن صفحه و تبدیل به Base64 برای ارسال امن به کاتلین
         val js = """
             (function() {
                 var clones = document.body.cloneNode(true);
-                // حذف المان‌های غیرضروری
-                var toRemove = clones.querySelectorAll('textarea, input, header, nav, footer, .ds-icon-button, button');
+                var toRemove = clones.querySelectorAll('textarea, input, header, nav, footer, .ds-icon-button, button, svg');
                 for(var i=0; i<toRemove.length; i++) { toRemove[i].remove(); }
                 var text = clones.innerText;
+                var b64 = btoa(unescape(encodeURIComponent(text)));
                 
-                // چک کردن اینکه آیا دکمه Stop (در حال تایپ) وجود دارد یا خیر
+                // چک کردن اینکه آیا دکمه Stop (در حال تولید) وجود دارد
                 var isGenerating = document.querySelector('button[aria-label*="Stop"], [class*="stop-button"]') !== null;
                 
-                return JSON.stringify({ text: text, isGenerating: isGenerating });
+                return JSON.stringify({ text: b64, isGenerating: isGenerating });
             })();
         """.trimIndent()
 
         webView.evaluateJavascript(js) { result ->
             if (result != null && result != "null" && result != "\"\"") {
-                // پاکسازی خروجی JSON
-                val cleanJson = result.replace("\\\"", "\"")
-                    .replace("\\\\n", "\n")
+                val cleanJson = result.removeSurrounding("\"")
+                    .replace("\\\"", "\"")
                     .replace("\\\\", "\\")
-                    .removeSurrounding("\"")
                 
                 try {
                     val jsonObj = org.json.JSONObject(cleanJson)
-                    val text = jsonObj.getString("text")
+                    val base64Text = jsonObj.getString("text")
                     val isGenerating = jsonObj.getBoolean("isGenerating")
                     
-                    // اگر هوش مصنوعی در حال تولید است یا متن خالی است، صبر می‌کنیم
+                    val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
+                    val text = String(decodedBytes, Charsets.UTF_8)
+                    
                     if (isGenerating || text.trim().isEmpty()) {
                         lastAiText = ""
                         stableCounter = 0
@@ -310,21 +316,27 @@ class AgentActivity : Activity() {
                     
                     if (text == lastAiText) {
                         stableCounter++
-                        if (stableCounter >= 3) { // ۳ ثانیه ثابت ماند
-                            // پیدا کردن آخرین بلوک کد bash
-                            val regex = Regex("```(?:bash|sh)?\\n([\\s\\S]*?)```")
+                        if (stableCounter >= 4) { // ۴ ثانیه ثابت ماند
+                            // لاگ کردن بخشی از متن برای دیباگ
+                            Logger.i("Agent", "Stable text detected. Length: ${text.length}")
+                            Logger.d("Agent", "Snippet: ${text.take(200)}")
+                            
+                            // پیدا کردن آخرین بلوک کد (چه bash چه python)
+                            val regex = Regex("```(?:bash|sh|python)?\\n([\\s\\S]*?)```")
                             val matches = regex.findAll(text)
                             val lastMatch = matches.lastOrNull()
                             
                             if (lastMatch != null) {
                                 val command = lastMatch.groupValues[1].trim()
-                                Logger.i("Agent", "Stable AI response found. Extracted command length: ${command.length}")
+                                Logger.i("Agent", "Extracted command: $command")
                                 log("📥 AI response received.")
                                 stableCounter = 0
                                 lastAiText = ""
                                 aiCheckAttempts = 0
                                 processAiResponse(command)
                                 return@evaluateJavascript
+                            } else {
+                                Logger.w("Agent", "No code block found in stable text.")
                             }
                         }
                     } else {
@@ -342,11 +354,11 @@ class AgentActivity : Activity() {
     private var cmdCheckAttempts = 0
     private fun processAiResponse(command: String) {
         log("\n💻 Running Command:\n$command\n")
-        Logger.i("Agent", "Extracted command: $command")
         
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             cmdCheckAttempts = 0
+            // برای اطمینان از اینکه خروجی درست است، کاراکترهای اضافی را حذف می‌کنیم
             val execCmd = "$command > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
             session.write(execCmd)
             Logger.i("Agent", "Command sent to terminal.")
