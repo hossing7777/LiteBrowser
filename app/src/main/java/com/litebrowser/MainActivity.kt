@@ -90,35 +90,33 @@ class MainActivity : Activity() {
     }
 
     private fun executeAiPrompt(prompt: String) {
+        // پاکسازی کاراکترهای خاص برای جلوگیری از خطای سینتکس در جاوااسکریپت
         val safePrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
         
         val js = """
             (function() {
                 var ta = document.querySelector('textarea');
                 if (!ta) {
-                    ta = document.querySelector('div[contenteditable="true"]');
-                    if (ta) {
-                        ta.innerText = "$safePrompt";
-                        ta.dispatchEvent(new Event('input', { bubbles: true }));
-                    } else {
-                        AndroidBridge.onAiError("Textarea not found. Are you logged in and on DeepSeek?");
-                        return;
-                    }
-                } else {
-                    var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                    nativeSetter.call(ta, "$safePrompt");
-                    ta.dispatchEvent(new Event('input', { bubbles: true }));
-                    ta.dispatchEvent(new Event('change', { bubbles: true }));
+                    AndroidBridge.onAiError("Textarea not found. Are you logged in and on the chat page?");
+                    return;
                 }
                 
+                // ۱. فوکوس روی کادر و شبیه‌سازی دقیق تایپ کردن برای React
+                ta.focus();
+                document.execCommand('selectAll', false, null);
+                document.execCommand('insertText', false, "$safePrompt");
+                
                 setTimeout(function() {
-                    // پیدا کردن دکمه ارسال: دکمه‌ای که داخلش آیکون (SVG) دارد و غیرفعال نیست
-                    var buttons = document.querySelectorAll('button');
+                    // ۲. تلاش برای شبیه‌سازی کلید Enter
+                    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+                    
+                    // ۳. پیدا کردن دکمه ارسال (Send) و کلیک روی آن
+                    var buttons = document.querySelectorAll('button, div[role="button"]');
                     var clicked = false;
                     for (var i = buttons.length - 1; i >= 0; i--) {
                         var btn = buttons[i];
-                        if (btn.querySelector('svg') && !btn.disabled && btn.offsetWidth > 0) {
-                            // بررسی اینکه دکمه در سمت راست صفحه است (دکمه ارسال)
+                        // بررسی اینکه دکمه آیکون دارد و در سمت راست کادر است
+                        if (btn.querySelector('svg') && btn.offsetWidth > 0) {
                             var rect = btn.getBoundingClientRect();
                             var taRect = ta.getBoundingClientRect();
                             if (rect.left > taRect.left + (taRect.width / 2)) {
@@ -128,28 +126,20 @@ class MainActivity : Activity() {
                             }
                         }
                     }
-                    
-                    // اگر دکمه پیدا نشد، کلید Enter را شبیه‌سازی کن
-                    if (!clicked) {
-                        var events = ['keydown', 'keypress', 'keyup'];
-                        for (var k = 0; k < events.length; k++) {
-                            ta.dispatchEvent(new KeyboardEvent(events[k], {
-                                key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
-                            }));
-                        }
-                    }
 
-                    // نظارت بر پاسخ دیپ‌سیک
+                    // ۴. نظارت بر پاسخ دیپ‌سیک
                     var lastText = "";
                     var stableCount = 0;
                     var attempts = 0;
                     var interval = setInterval(function() {
                         attempts++;
+                        // جستجوی پیام‌های هوش مصنوعی در صفحه
                         var msgs = document.querySelectorAll('.ds-markdown');
                         if (msgs.length > 0) {
                             var currentText = msgs[msgs.length - 1].innerText;
                             if (currentText === lastText && currentText.length > 0) {
                                 stableCount++;
+                                // اگر متن ۲ ثانیه تغییر نکرد، یعنی پاسخ کامل شده
                                 if (stableCount >= 4) {
                                     clearInterval(interval);
                                     AndroidBridge.onAiResponse(currentText);
@@ -159,12 +149,13 @@ class MainActivity : Activity() {
                                 lastText = currentText;
                             }
                         }
-                        if (attempts > 120) { // ۶۰ ثانیه تایم‌اوت
+                        // تایم‌اوت ۹۰ ثانیه‌ای
+                        if (attempts > 180) { 
                             clearInterval(interval);
                             AndroidBridge.onAiError("Timeout waiting for AI response");
                         }
                     }, 500);
-                }, 1000); // ۱ ثانیه صبر می‌کنیم تا React متن را پردازش کند
+                }, 500); // ۰.۵ ثانیه صبر برای پردازش React
             })();
         """.trimIndent()
         
