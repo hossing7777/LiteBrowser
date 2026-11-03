@@ -37,11 +37,11 @@ class AgentActivity : Activity() {
         Logger.i("Agent", "AgentActivity onCreate started")
         setContentView(R.layout.activity_agent)
         
-        etPrompt = findViewById(R.id.et_prompt)
-        btnStart = findViewById(R.id.btn_start)
-        tvLog = findViewById(R.id.tv_log)
-        webView = findViewById(R.id.webview_agent)
-        progressBar = findViewById(R.id.progress_agent)
+        etPrompt = findViewById(R.id.et_agent_prompt)
+        btnStart = findViewById(R.id.btn_agent_start)
+        tvLog = findViewById(R.id.tv_agent_log)
+        webView = findViewById(R.id.agent_webview)
+        progressBar = findViewById(R.id.agent_progress)
 
         handler.postDelayed({
             Logger.i("Agent", "Setting up WebView")
@@ -66,6 +66,7 @@ class AgentActivity : Activity() {
                 Toast.makeText(this, "لطفا یک درخواست وارد کنید", Toast.LENGTH_SHORT).show()
             }
         }
+        Logger.i("Agent", "AgentActivity onCreate finished")
     }
 
     private fun ensureTerminalSession() {
@@ -163,7 +164,6 @@ class AgentActivity : Activity() {
         log("🤖 Starting Agent with task: $prompt\n")
         Logger.i("Agent", "startAgent called with prompt: $prompt")
         
-        // اطمینان از باز بودن ترمینال
         ensureTerminalSession()
 
         val systemPrompt = """
@@ -215,10 +215,7 @@ class AgentActivity : Activity() {
                 }
                 
                 setTimeout(function() {
-                    // تلاش برای شبیه‌سازی Enter
                     ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                    
-                    // پیدا کردن دکمه ارسال و کلیک روی آن
                     var buttons = document.querySelectorAll('button, div[role="button"]');
                     var clicked = false;
                     for (var i = buttons.length - 1; i >= 0; i--) {
