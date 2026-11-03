@@ -146,7 +146,6 @@ class AgentActivity : Activity() {
             Logger.e("Agent", "Failed to setup WebView", e)
         }
 
-        // ✅ تایم‌اوت اجباری برای لود صفحه (در صورت عدم اجرای onPageFinished)
         handler.postDelayed({
             if (!isPageLoaded) {
                 Logger.w("Agent", "onPageFinished timeout. Forcing page loaded state.")
@@ -272,43 +271,68 @@ class AgentActivity : Activity() {
             return
         }
 
+        // ✅ استخراج به روش Brute-force: خواندن کل متن و پیدا کردن آخرین بلوک کد در کاتلین
         val js = """
             (function() {
-                var msgs = document.querySelectorAll('.ds-markdown');
-                if (msgs.length === 0) {
-                    msgs = document.querySelectorAll('div[class*="markdown"]');
-                }
-                if (msgs.length > 0) {
-                    var lastMsg = msgs[msgs.length - 1];
-                    var clone = lastMsg.cloneNode(true);
-                    var btns = clone.querySelectorAll('button, .ds-icon-button, svg');
-                    for(var j=0; j<btns.length; j++) { btns[j].remove(); }
-                    return clone.innerText.trim();
-                }
-                return "";
+                var clones = document.body.cloneNode(true);
+                // حذف المان‌های غیرضروری
+                var toRemove = clones.querySelectorAll('textarea, input, header, nav, footer, .ds-icon-button, button');
+                for(var i=0; i<toRemove.length; i++) { toRemove[i].remove(); }
+                var text = clones.innerText;
+                
+                // چک کردن اینکه آیا دکمه Stop (در حال تایپ) وجود دارد یا خیر
+                var isGenerating = document.querySelector('button[aria-label*="Stop"], [class*="stop-button"]') !== null;
+                
+                return JSON.stringify({ text: text, isGenerating: isGenerating });
             })();
         """.trimIndent()
 
         webView.evaluateJavascript(js) { result ->
             if (result != null && result != "null" && result != "\"\"") {
-                val cleanText = result.replace("\\n", "\n").replace("\\\"", "\"").replace("\"", "").trim()
+                // پاکسازی خروجی JSON
+                val cleanJson = result.replace("\\\"", "\"")
+                    .replace("\\\\n", "\n")
+                    .replace("\\\\", "\\")
+                    .removeSurrounding("\"")
                 
-                if (cleanText.isNotEmpty()) {
-                    if (cleanText == lastAiText) {
+                try {
+                    val jsonObj = org.json.JSONObject(cleanJson)
+                    val text = jsonObj.getString("text")
+                    val isGenerating = jsonObj.getBoolean("isGenerating")
+                    
+                    // اگر هوش مصنوعی در حال تولید است یا متن خالی است، صبر می‌کنیم
+                    if (isGenerating || text.trim().isEmpty()) {
+                        lastAiText = ""
+                        stableCounter = 0
+                        handler.postDelayed({ checkAiResponse() }, 1000)
+                        return@evaluateJavascript
+                    }
+                    
+                    if (text == lastAiText) {
                         stableCounter++
                         if (stableCounter >= 3) { // ۳ ثانیه ثابت ماند
-                            Logger.i("Agent", "Stable AI response found. Length: ${cleanText.length}")
-                            log("📥 AI response received.")
-                            stableCounter = 0
-                            lastAiText = ""
-                            aiCheckAttempts = 0
-                            processAiResponse(cleanText)
-                            return@evaluateJavascript
+                            // پیدا کردن آخرین بلوک کد bash
+                            val regex = Regex("```(?:bash|sh)?\\n([\\s\\S]*?)```")
+                            val matches = regex.findAll(text)
+                            val lastMatch = matches.lastOrNull()
+                            
+                            if (lastMatch != null) {
+                                val command = lastMatch.groupValues[1].trim()
+                                Logger.i("Agent", "Stable AI response found. Extracted command length: ${command.length}")
+                                log("📥 AI response received.")
+                                stableCounter = 0
+                                lastAiText = ""
+                                aiCheckAttempts = 0
+                                processAiResponse(command)
+                                return@evaluateJavascript
+                            }
                         }
                     } else {
                         stableCounter = 0
-                        lastAiText = cleanText
+                        lastAiText = text
                     }
+                } catch (e: Exception) {
+                    Logger.e("Agent", "JSON parsing failed: ${e.message}")
                 }
             }
             handler.postDelayed({ checkAiResponse() }, 1000)
@@ -316,42 +340,31 @@ class AgentActivity : Activity() {
     }
 
     private var cmdCheckAttempts = 0
-    private fun processAiResponse(aiText: String) {
-        Logger.i("Agent", "AI Response: $aiText")
-        val regex = Regex("```(?:bash|sh)?\\n([\\s\\S]*?)```")
-        val match = regex.find(aiText)
+    private fun processAiResponse(command: String) {
+        log("\n💻 Running Command:\n$command\n")
+        Logger.i("Agent", "Extracted command: $command")
         
-        if (match != null) {
-            val command = match.groupValues[1].trim()
-            log("\n💻 Running Command:\n$command\n")
-            Logger.i("Agent", "Extracted command: $command")
-            
-            val session = TerminalManager.sessions.firstOrNull()
-            if (session != null && session.isRunning) {
-                cmdCheckAttempts = 0
-                val execCmd = "$command > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
-                session.write(execCmd)
-                Logger.i("Agent", "Command sent to terminal.")
-                log("⏳ Executing command in terminal...")
-                handler.postDelayed({ readTerminalOutput(aiText) }, 1500)
-            } else {
-                val err = "No active terminal session. Please open terminal first."
-                Logger.e("Agent", err)
-                log("❌ Error: $err")
-                isRunning = false
-            }
+        val session = TerminalManager.sessions.firstOrNull()
+        if (session != null && session.isRunning) {
+            cmdCheckAttempts = 0
+            val execCmd = "$command > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
+            session.write(execCmd)
+            Logger.i("Agent", "Command sent to terminal.")
+            log("⏳ Executing command in terminal...")
+            handler.postDelayed({ readTerminalOutput() }, 1500)
         } else {
-            Logger.w("Agent", "No valid bash code block found in AI response.")
-            log("⚠️ AI did not return a valid command block. Retrying...")
-            handler.postDelayed({ checkAiResponse() }, 2000)
+            val err = "No active terminal session. Please open terminal first."
+            Logger.e("Agent", err)
+            log("❌ Error: $err")
+            isRunning = false
         }
     }
 
-    private fun readTerminalOutput(previousAiText: String) {
+    private fun readTerminalOutput() {
         if (!isRunning) return
         
         cmdCheckAttempts++
-        if (cmdCheckAttempts > 60) { // ۱ دقیقه تایم‌اوت برای اجرای دستور
+        if (cmdCheckAttempts > 60) {
             Logger.e("Agent", "Timeout waiting for command execution.")
             log("❌ Error: Command execution timed out.")
             isRunning = false
@@ -371,10 +384,10 @@ class AgentActivity : Activity() {
                     runOnUiThread { sendToAI(nextPrompt) }
                     handler.postDelayed({ checkAiResponse() }, 3000)
                 } else {
-                    handler.postDelayed({ readTerminalOutput(previousAiText) }, 1000)
+                    handler.postDelayed({ readTerminalOutput() }, 1000)
                 }
             } else {
-                handler.postDelayed({ readTerminalOutput(previousAiText) }, 1000)
+                handler.postDelayed({ readTerminalOutput() }, 1000)
             }
         }
     }
