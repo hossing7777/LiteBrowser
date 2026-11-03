@@ -99,18 +99,20 @@ class AgentActivity : Activity() {
                 "LC_ALL=C.UTF-8"
             )
 
+            // ✅ Mount کردن پوشه Download گوشی به /root/Download در لینوکس
             val args = arrayOf(
                 prootBin.absolutePath, "--link2symlink", "-0",
                 "-r", alpineRoot.absolutePath,
                 "-b", "/dev", "-b", "/proc", "-b", "/sys",
                 "-b", "${homeDir.absolutePath}:/root",
                 "-b", "${prefixDir.absolutePath}/bin:/usr/local/bin",
+                "-b", "/storage/emulated/0/Download:/root/Download",
                 "-w", "/root", "/bin/sh", "-l"
             )
 
             val session = TerminalSession(prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager)
             TerminalManager.addSession(session)
-            Logger.i("Agent", "New terminal session created.")
+            Logger.i("Agent", "New terminal session created with Download mounted.")
         } else {
             Logger.i("Agent", "Terminal session already active.")
         }
@@ -131,14 +133,12 @@ class AgentActivity : Activity() {
                     super.onPageStarted(view, url, favicon)
                     runOnUiThread { progressBar.visibility = View.VISIBLE }
                     isPageLoaded = false
-                    Logger.i("Agent", "WebView loading started: $url")
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     runOnUiThread { progressBar.visibility = View.GONE }
                     isPageLoaded = true
-                    Logger.i("Agent", "WebView loading finished: $url")
                     log("✅ DeepSeek page loaded. Ready to start.")
                 }
             }
@@ -180,7 +180,7 @@ class AgentActivity : Activity() {
             1. To install packages, use: `apk add --cache-dir /mnt/cache/apk <package>`
             2. You are running as root.
             3. If a command fails, analyze the error and try again.
-            4. To create files, use `cat << 'EOF' > filename` or echo.
+            4. The Android "Download" folder is mounted at `/root/Download`. Save files there if requested.
             
             User Task: $prompt
         """.trimIndent()
@@ -230,7 +230,6 @@ class AgentActivity : Activity() {
                             }
                         }
                     }
-                    AndroidBridge.logDebug("Send button clicked: " + clicked);
                 }, 500);
             })();
         """.trimIndent()
@@ -239,26 +238,34 @@ class AgentActivity : Activity() {
     }
 
     private var lastAiText = ""
-    private fun isResponseStable(text: String): Boolean {
-        if (text == lastAiText) {
-            lastAiText = ""
-            return true
-        }
-        lastAiText = text
-        return false
-    }
+    private var stableCounter = 0
+    private var aiCheckAttempts = 0
 
     private fun checkAiResponse() {
         if (!isRunning) return
+        
+        aiCheckAttempts++
+        if (aiCheckAttempts > 120) { // ۲ دقیقه تایم‌اوت
+            Logger.e("Agent", "Timeout waiting for AI response.")
+            log("❌ Error: Timeout waiting for AI response.")
+            isRunning = false
+            return
+        }
 
+        // استفاده از سلکتور قوی‌تر برای خواندن پیام
         val js = """
             (function() {
                 var msgs = document.querySelectorAll('.ds-markdown');
+                if (msgs.length === 0) {
+                    // Fallback: try to find chat bubbles
+                    msgs = document.querySelectorAll('div[class*="message"]');
+                }
                 if (msgs.length > 0) {
-                    var clone = msgs[msgs.length - 1].cloneNode(true);
-                    var btns = clone.querySelectorAll('button, .ds-icon-button');
+                    var lastMsg = msgs[msgs.length - 1];
+                    var clone = lastMsg.cloneNode(true);
+                    var btns = clone.querySelectorAll('button, .ds-icon-button, svg');
                     for(var j=0; j<btns.length; j++) { btns[j].remove(); }
-                    return clone.innerText;
+                    return clone.innerText.trim();
                 }
                 return "";
             })();
@@ -266,32 +273,31 @@ class AgentActivity : Activity() {
 
         webView.evaluateJavascript(js) { result ->
             if (result != null && result != "null" && result != "\"\"") {
-                val cleanText = result.replace("\\n", "\n").replace("\\\"", "\"").replace("\"", "")
-                if (cleanText.isNotEmpty() && cleanText != "TASK_COMPLETE") {
-                    if (cleanText.length > 10) {
-                        if (isResponseStable(cleanText)) {
+                val cleanText = result.replace("\\n", "\n").replace("\\\"", "\"").replace("\"", "").trim()
+                
+                if (cleanText.isNotEmpty()) {
+                    if (cleanText == lastAiText) {
+                        stableCounter++
+                        if (stableCounter >= 3) { // ۳ ثانیه ثابت ماند
                             Logger.i("Agent", "Stable AI response found. Length: ${cleanText.length}")
                             log("📥 AI response received.")
+                            stableCounter = 0
+                            lastAiText = ""
+                            aiCheckAttempts = 0
                             processAiResponse(cleanText)
-                        } else {
-                            handler.postDelayed({ checkAiResponse() }, 1000)
+                            return@evaluateJavascript
                         }
                     } else {
-                        handler.postDelayed({ checkAiResponse() }, 1000)
+                        stableCounter = 0
+                        lastAiText = cleanText
                     }
-                } else if (cleanText == "TASK_COMPLETE") {
-                    Logger.i("Agent", "TASK_COMPLETE received.")
-                    log("\n✅ Agent finished the task!")
-                    isRunning = false
-                } else {
-                    handler.postDelayed({ checkAiResponse() }, 1000)
                 }
-            } else {
-                handler.postDelayed({ checkAiResponse() }, 1000)
             }
+            handler.postDelayed({ checkAiResponse() }, 1000)
         }
     }
 
+    private var cmdCheckAttempts = 0
     private fun processAiResponse(aiText: String) {
         Logger.i("Agent", "AI Response: $aiText")
         val regex = Regex("```(?:bash|sh)?\\n([\\s\\S]*?)```")
@@ -304,6 +310,7 @@ class AgentActivity : Activity() {
             
             val session = TerminalManager.sessions.firstOrNull()
             if (session != null && session.isRunning) {
+                cmdCheckAttempts = 0
                 val execCmd = "$command > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
                 session.write(execCmd)
                 Logger.i("Agent", "Command sent to terminal.")
@@ -324,6 +331,14 @@ class AgentActivity : Activity() {
 
     private fun readTerminalOutput(previousAiText: String) {
         if (!isRunning) return
+        
+        cmdCheckAttempts++
+        if (cmdCheckAttempts > 60) { // ۱ دقیقه تایم‌اوت برای اجرای دستور
+            Logger.e("Agent", "Timeout waiting for command execution.")
+            log("❌ Error: Command execution timed out.")
+            isRunning = false
+            return
+        }
 
         thread {
             if (outFile.exists()) {
