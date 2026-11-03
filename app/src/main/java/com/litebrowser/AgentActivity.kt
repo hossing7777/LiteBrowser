@@ -206,6 +206,7 @@ class AgentActivity : Activity() {
                     if (!ta) {
                         ta = document.querySelector('div[contenteditable="true"]');
                         if (ta) {
+                            ta.focus();
                             ta.innerText = text;
                             ta.dispatchEvent(new Event('input', { bubbles: true }));
                         } else {
@@ -213,6 +214,7 @@ class AgentActivity : Activity() {
                             return;
                         }
                     } else {
+                        ta.focus();
                         var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
                         nativeSetter.call(ta, text);
                         ta.dispatchEvent(new Event('input', { bubbles: true }));
@@ -220,15 +222,20 @@ class AgentActivity : Activity() {
                     }
                     
                     setTimeout(function() {
+                        // روش اول: فشردن کلید Enter
                         ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+                        
+                        // روش دوم: پیدا کردن دکمه ارسال با آیکون
                         var buttons = document.querySelectorAll('button, div[role="button"]');
                         var clicked = false;
                         for (var i = buttons.length - 1; i >= 0; i--) {
                             var btn = buttons[i];
-                            if (btn.querySelector('svg') && btn.offsetWidth > 0) {
+                            // بررسی دکمه‌های حاوی آیکون ارسال
+                            if (btn.innerHTML.includes('svg') && btn.offsetWidth > 0) {
                                 var rect = btn.getBoundingClientRect();
                                 var taRect = ta.getBoundingClientRect();
-                                if (rect.left > taRect.left + (taRect.width / 2)) {
+                                // دکمه سمت راست کادر متن
+                                if (rect.left > taRect.left + (taRect.width / 2) && rect.top > taRect.top) {
                                     btn.click();
                                     clicked = true;
                                     break;
@@ -258,7 +265,7 @@ class AgentActivity : Activity() {
         if (aiCheckAttempts % 5 == 0) {
             Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts, emptyAttempts=$emptyAttempts")
         }
-        if (aiCheckAttempts > 300) { // 5 دقیقه تایم‌اوت کلی
+        if (aiCheckAttempts > 300) { // ۵ دقیقه تایم‌اوت کلی
             Logger.e("Agent", "Total timeout waiting for AI response.")
             log("❌ Error: Total timeout waiting for AI response.")
             isRunning = false
@@ -271,29 +278,20 @@ class AgentActivity : Activity() {
                     var text = "";
                     var hasCode = false;
                     
-                    // 1. جستجوی مستقیم برای بلوک کد جدید دیپ‌سیک
+                    // 1. جستجوی مستقیم برای بلوک کد در کل صفحه
                     var pres = document.querySelectorAll('pre');
                     if (pres.length > 0) {
                         var lastPre = pres[pres.length - 1];
-                        var codeEl = lastPre.querySelector('code');
-                        if (codeEl) {
-                            text = codeEl.innerText || codeEl.textContent || "";
-                        } else {
-                            text = lastPre.innerText || lastPre.textContent || "";
-                            // پاکسازی هدرها و دکمه‌ها
-                            text = text.replace(/^(bash|sh|shell|console|text)\s*\n/i, "");
-                            text = text.replace(/Copy/g, "").replace(/Download/g, "").trim();
-                        }
+                        text = lastPre.innerText || lastPre.textContent || "";
+                        text = text.replace(/Copy/g, "").replace(/Download/g, "").trim();
                         hasCode = true;
-                    }
-                    
-                    // 2. اگر کد پیدا نشد، کل متن مارک‌داون را بگیر (شاید هنوز در حال فکر کردن است)
-                    if (!hasCode) {
+                    } else {
+                        // 2. اگر pre نبود، مارک‌داون را بگیر
                         var markdowns = document.querySelectorAll('.ds-markdown, div[class*="markdown"]');
                         if (markdowns.length > 0) {
                             var lastMd = markdowns[markdowns.length - 1];
                             text = lastMd.innerText || lastMd.textContent || "";
-                            var match = text.match(/```(?:bash|sh|shell)?\s*([\s\S]*?)```/);
+                            var match = text.match(/```(?:bash|sh|shell|console|text)?\s*([\s\S]*?)```/);
                             if (match) {
                                 text = match[1].trim();
                                 hasCode = true;
@@ -302,18 +300,18 @@ class AgentActivity : Activity() {
                             }
                         }
                     }
-
-                    // 3. تشخیص دقیق وضعیت تولید (آیا دکمه Stop وجود دارد؟)
+                    
+                    // 3. بررسی وضعیت تولید
                     var isGenerating = false;
-                    var stopBtn = document.querySelector('button[aria-label="Stop"], button[aria-label="stop"], div[class*="stop"]');
-                    if (stopBtn) {
-                        var rect = stopBtn.getBoundingClientRect();
-                        if (rect.width > 0 && rect.height > 0) {
-                            isGenerating = true;
-                        }
+                    
+                    // اگر کلمه Thinking یا در حال فکر کردن در صفحه بود
+                    var bodyText = document.body.innerText || "";
+                    if (bodyText.includes("Thinking...") || bodyText.includes("Thought for") || bodyText.includes("در حال فکر کردن")) {
+                        isGenerating = true;
                     }
                     
-                    if (text.endsWith("●") || text.endsWith("▍")) {
+                    // اگر متن با نشانگرهای پایانی همراه بود
+                    if (text.endsWith("●") || text.endsWith("▍") || text.endsWith("_")) {
                         isGenerating = true;
                     }
                     
@@ -349,7 +347,7 @@ class AgentActivity : Activity() {
                 val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
                 val text = String(decodedBytes, Charsets.UTF_8).trim()
                 
-                // اگر در حال تولید است، صبر می‌کنیم و تایمر خالی بودن را ریست می‌کنیم
+                // اگر در حال تولید است، تایمر خالی بودن را ریست می‌کنیم
                 if (isGenerating) {
                     emptyAttempts = 0
                     lastAiText = ""
@@ -358,10 +356,10 @@ class AgentActivity : Activity() {
                     return@evaluateJavascript
                 }
                 
-                // اگر متن خالی است و در حال تولید هم نیست
                 if (text.isEmpty()) {
                     emptyAttempts++
-                    if (emptyAttempts > 30) { // 30 ثانیه فرصت برای پاسخ
+                    // به جای ۳۰ ثانیه، ۱۲۰ ثانیه فرصت می‌دهیم
+                    if (emptyAttempts > 120) { 
                         Logger.e("Agent", "No AI response text detected after $emptyAttempts attempts.")
                         log("❌ Error: DeepSeek did not respond. Please check your login, network and try again.")
                         isRunning = false
