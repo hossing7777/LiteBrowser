@@ -17,13 +17,12 @@ class WebAppInterface(private val context: Context, private val webView: WebView
     }
 
     @JavascriptInterface
-    fun scrapeAndSendToTerminal(selector: String) {
-        // (کد قبلی)
+    fun logDebug(msg: String) {
+        Logger.i("AgentBridge", msg)
     }
 
     @JavascriptInterface
     fun onAiResponse(text: String) {
-        // (کد قبلی برای `ask`)
         try {
             val resFile = File(context.filesDir, "home/ai_res.txt")
             val base64Text = android.util.Base64.encodeToString(text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
@@ -35,7 +34,6 @@ class WebAppInterface(private val context: Context, private val webView: WebView
 
     @JavascriptInterface
     fun onAiError(error: String) {
-        // (کد قبلی)
         try {
             val resFile = File(context.filesDir, "home/ai_res.txt")
             val base64Text = android.util.Base64.encodeToString("Error: $error".toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
@@ -47,7 +45,7 @@ class WebAppInterface(private val context: Context, private val webView: WebView
 
     @JavascriptInterface
     fun onAgentError(error: String) {
-        Logger.e("Agent", error)
+        Logger.e("Agent", "JS Error: $error")
         Toast.makeText(context, "Agent Error: $error", Toast.LENGTH_LONG).show()
     }
 }
