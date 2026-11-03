@@ -41,7 +41,6 @@ class AgentActivity : Activity() {
         webView = findViewById(R.id.agent_webview)
         progressBar = findViewById(R.id.agent_progress)
 
-        // ارتفاع WebView را زیاد می‌کنیم تا دیپ‌سیک پاسخ را کاملاً رندر کند
         val params = webView.layoutParams
         params.height = 1200
         webView.layoutParams = params
@@ -110,7 +109,6 @@ class AgentActivity : Activity() {
             )
 
             val session = TerminalSession(prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager)
-            // ✅ باگ اصلی اینجا بود: باید حتما سایز را تنظیم کنیم تا خروجی در حافظه ثبت شود
             session.updateSize(80, 24) 
             TerminalManager.addSession(session)
         }
@@ -167,6 +165,7 @@ class AgentActivity : Activity() {
             Do NOT explain anything. Do NOT repeat these instructions. Do NOT use markdown outside the code block.
             You are running as root.
             The Android Download folder is available at /root/Download (no backticks).
+            If the task is done, reply with exactly TASK_COMPLETE.
             
             [TASK]
             $prompt
@@ -241,40 +240,35 @@ class AgentActivity : Activity() {
                     window.scrollTo(0, document.body.scrollHeight);
                     var codeText = "";
                     var hasCode = false;
+                    var taskComplete = false;
                     
-                    var pres = document.querySelectorAll('pre');
+                    // فقط بلوک‌های کدی را بگیر که قبلا پردازش نشده‌اند
+                    var pres = document.querySelectorAll('pre:not([data-processed])');
                     if (pres.length > 0) {
                         var lastPre = pres[pres.length - 1];
                         codeText = lastPre.innerText || lastPre.textContent || "";
-                        // پاکسازی هدرهای دیپ‌سیک
                         codeText = codeText.replace(/^Copy\s*\n?/i, "").replace(/^bash\s*\n?/i, "").replace(/^sh\s*\n?/i, "").trim();
                         hasCode = true;
+                        lastPre.setAttribute('data-processed', 'true'); // علامت‌گذاری به عنوان پردازش شده
                     } else {
-                        var markdowns = document.querySelectorAll('.ds-markdown, div[class*="markdown"]');
-                        if (markdowns.length > 0) {
-                            var lastMd = markdowns[markdowns.length - 1];
-                            var text = lastMd.innerText || lastMd.textContent || "";
-                            var match = text.match(/```(?:bash|sh|shell)?\s*([\s\S]*?)```/);
-                            if (match) {
-                                codeText = match[1].trim();
-                                hasCode = true;
-                            }
+                        // اگر کد نبود، چک کن آیا پیام TASK_COMPLETE داده شده؟
+                        var bodyText = document.body.innerText || "";
+                        // بررسی ۱۰۰ کاراکتر آخر صفحه
+                        var lastText = bodyText.trim().slice(-100);
+                        if (lastText.includes("TASK_COMPLETE")) {
+                            taskComplete = true;
                         }
                     }
                     
                     var isGenerating = false;
-                    var bodyText = document.body.innerText || "";
                     if (bodyText.includes("Thinking...") || bodyText.includes("Thought for")) {
-                        isGenerating = true;
-                    }
-                    if (codeText.endsWith("●") || codeText.endsWith("▍") || codeText.endsWith("_")) {
                         isGenerating = true;
                     }
                     
                     var b64 = btoa(unescape(encodeURIComponent(codeText)));
-                    return JSON.stringify({ text: b64, isGenerating: isGenerating, hasCode: hasCode });
+                    return JSON.stringify({ text: b64, isGenerating: isGenerating, hasCode: hasCode, taskComplete: taskComplete });
                 } catch(e) {
-                    return JSON.stringify({ text: "", isGenerating: true, hasCode: false });
+                    return JSON.stringify({ text: "", isGenerating: true, hasCode: false, taskComplete: false });
                 }
             })();
         """.trimIndent()
@@ -294,7 +288,15 @@ class AgentActivity : Activity() {
                 val hasCode = jsonObj.getBoolean("hasCode")
                 val base64Text = jsonObj.getString("text")
                 val isGenerating = jsonObj.getBoolean("isGenerating")
+                val taskComplete = jsonObj.optBoolean("taskComplete", false)
                 
+                if (taskComplete) {
+                    log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.")
+                    Logger.i("Agent", "Task Complete received from AI.")
+                    isRunning = false
+                    return@evaluateJavascript
+                }
+
                 val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
                 val text = String(decodedBytes, Charsets.UTF_8).trim()
                 
@@ -330,29 +332,30 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(command: String) {
+        if (command.contains("TASK_COMPLETE")) {
+            log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.")
+            isRunning = false
+            return
+        }
+
         log("\n💻 Running Command:\n$command\n")
         
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             val scriptFile = File(filesDir, "home/run_agent.sh")
-            // حذف \r اضافی و اطمینان از وجود \n در انتهای فایل
             val cleanCommand = command.replace("\r", "").trim() + "\n"
             scriptFile.writeText(cleanCommand)
             
             val startMarker = "___AGENT_START___"
             val endMarker = "___AGENT_END___"
             
-            // اجرای اسکریپت با /dev/null برای جلوگیری از هنگ کردن در صورت نیاز به ورودی
             val execCmd = "echo \"$startMarker\"; sh /root/run_agent.sh < /dev/null; echo \"$endMarker\"\r"
             
             session.write(execCmd)
             log("⏳ Executing...")
-            Logger.i("Agent", "Executing script file...")
-            
             handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1000)
         } else {
             log("❌ Error: No terminal session.")
-            Logger.e("Agent", "No terminal session.")
             isRunning = false
         }
     }
@@ -360,17 +363,14 @@ class AgentActivity : Activity() {
     private fun readTerminalOutput(startMarker: String, endMarker: String, attempts: Int) {
         if (!isRunning) return
         
-        if (attempts > 30) { // ۳۰ ثانیه فرصت کافی است
+        if (attempts > 30) { 
             log("❌ Error: Command execution timed out.")
-            Logger.e("Agent", "Command execution timed out.")
             isRunning = false
             return
         }
 
         val session = TerminalManager.sessions.firstOrNull()
         val screenText = session?.emulator?.screen?.getTranscriptText() ?: ""
-        
-        // پاکسازی کدهای رنگی ترمینال برای جلوگیری از خطای عدم تطابق
         val cleanScreenText = screenText.replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "")
 
         if (cleanScreenText.contains(endMarker)) {
@@ -383,7 +383,6 @@ class AgentActivity : Activity() {
                 "Command executed successfully (no output)."
             }
 
-            // حذف خطوط مربوط به تایپ شدن دستورات در ترمینال از خروجی
             output = output.lines().filterNot { it.contains("sh /root/run_agent.sh") || it.contains("echo \"___AGENT") }.joinToString("\n").trim()
             if (output.isEmpty()) output = "Command executed successfully (no output)."
 
@@ -392,8 +391,6 @@ class AgentActivity : Activity() {
             }
 
             log("\n📄 Output:\n$output\n")
-            Logger.i("Agent", "Output captured. Sending back to AI.")
-
             val nextPrompt = "Command Output:\n$output\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
             sendToAI(nextPrompt)
             handler.postDelayed({ checkAiResponse() }, 3000)
@@ -405,7 +402,6 @@ class AgentActivity : Activity() {
     override fun onDestroy() {
         isRunning = false
         handler.removeCallbacksAndMessages(null)
-        Logger.i("Agent", "AgentActivity onDestroy")
         super.onDestroy()
     }
 }
