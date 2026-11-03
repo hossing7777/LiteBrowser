@@ -157,11 +157,13 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "LC_ALL=C.UTF-8"
             )
 
+            // ✅ افزودن بایند برای پوشه bin اندروید به /usr/local/bin لینوکس
             val args = arrayOf(
                 prootBin.absolutePath, "--link2symlink", "-0",
                 "-r", alpineRoot.absolutePath,
                 "-b", "/dev", "-b", "/proc", "-b", "/sys",
                 "-b", "${homeDir.absolutePath}:/root",
+                "-b", "${prefixDir.absolutePath}/bin:/usr/local/bin",
                 "-w", "/root", "/bin/sh", "-l"
             )
 
