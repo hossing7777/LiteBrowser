@@ -258,7 +258,7 @@ class AgentActivity : Activity() {
         if (aiCheckAttempts % 5 == 0) {
             Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts, emptyAttempts=$emptyAttempts")
         }
-        if (aiCheckAttempts > 120) { // ~2 دقیقه تایم‌اوت کلی
+        if (aiCheckAttempts > 300) { // 5 دقیقه تایم‌اوت کلی
             Logger.e("Agent", "Total timeout waiting for AI response.")
             log("❌ Error: Total timeout waiting for AI response.")
             isRunning = false
@@ -271,38 +271,48 @@ class AgentActivity : Activity() {
                     var text = "";
                     var hasCode = false;
                     
-                    // استخراج متن از جدیدترین بلوک مارک‌داون
-                    var mdBlocks = document.querySelectorAll('.ds-markdown');
-                    if (mdBlocks.length > 0) {
-                        var lastMd = mdBlocks[mdBlocks.length - 1];
-                        var pres = lastMd.querySelectorAll('pre');
-                        if (pres.length > 0) {
-                            text = pres[pres.length - 1].innerText || pres[pres.length - 1].textContent || "";
-                            hasCode = true;
+                    // 1. جستجوی مستقیم برای بلوک کد جدید دیپ‌سیک
+                    var pres = document.querySelectorAll('pre');
+                    if (pres.length > 0) {
+                        var lastPre = pres[pres.length - 1];
+                        var codeEl = lastPre.querySelector('code');
+                        if (codeEl) {
+                            text = codeEl.innerText || codeEl.textContent || "";
                         } else {
+                            text = lastPre.innerText || lastPre.textContent || "";
+                            // پاکسازی هدرها و دکمه‌ها
+                            text = text.replace(/^(bash|sh|shell|console|text)\s*\n/i, "");
+                            text = text.replace(/Copy/g, "").replace(/Download/g, "").trim();
+                        }
+                        hasCode = true;
+                    }
+                    
+                    // 2. اگر کد پیدا نشد، کل متن مارک‌داون را بگیر (شاید هنوز در حال فکر کردن است)
+                    if (!hasCode) {
+                        var markdowns = document.querySelectorAll('.ds-markdown, div[class*="markdown"]');
+                        if (markdowns.length > 0) {
+                            var lastMd = markdowns[markdowns.length - 1];
                             text = lastMd.innerText || lastMd.textContent || "";
-                            var match = text.match(/```(?:bash|sh|shell|console)?\s*([\s\S]*?)```/);
+                            var match = text.match(/```(?:bash|sh|shell)?\s*([\s\S]*?)```/);
                             if (match) {
-                                text = match[1];
+                                text = match[1].trim();
                                 hasCode = true;
+                            } else {
+                                text = text.trim();
                             }
                         }
                     }
-                    
-                    // تمیزکاری
-                    text = (text || "").replace(/Copy/g, "").trim();
-                    
-                    // بررسی دقیق وضعیت تولید: فقط دکمه‌های واقعی و قابل مشاهده
+
+                    // 3. تشخیص دقیق وضعیت تولید (آیا دکمه Stop وجود دارد؟)
                     var isGenerating = false;
-                    var stopCandidates = document.querySelectorAll('button[aria-label*="Stop"], button[aria-label*="stop"]');
-                    for (var i = 0; i < stopCandidates.length; i++) {
-                        if (stopCandidates[i].offsetWidth > 0 && stopCandidates[i].offsetHeight > 0) {
+                    var stopBtn = document.querySelector('button[aria-label="Stop"], button[aria-label="stop"], div[class*="stop"]');
+                    if (stopBtn) {
+                        var rect = stopBtn.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
                             isGenerating = true;
-                            break;
                         }
                     }
                     
-                    // بررسی نشانگرهای پایانی متن (در حال تولید)
                     if (text.endsWith("●") || text.endsWith("▍")) {
                         isGenerating = true;
                     }
@@ -339,10 +349,19 @@ class AgentActivity : Activity() {
                 val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
                 val text = String(decodedBytes, Charsets.UTF_8).trim()
                 
-                // ردیابی متن خالی
+                // اگر در حال تولید است، صبر می‌کنیم و تایمر خالی بودن را ریست می‌کنیم
+                if (isGenerating) {
+                    emptyAttempts = 0
+                    lastAiText = ""
+                    stableCounter = 0
+                    handler.postDelayed({ checkAiResponse() }, 1000)
+                    return@evaluateJavascript
+                }
+                
+                // اگر متن خالی است و در حال تولید هم نیست
                 if (text.isEmpty()) {
                     emptyAttempts++
-                    if (emptyAttempts > 15) {
+                    if (emptyAttempts > 30) { // 30 ثانیه فرصت برای پاسخ
                         Logger.e("Agent", "No AI response text detected after $emptyAttempts attempts.")
                         log("❌ Error: DeepSeek did not respond. Please check your login, network and try again.")
                         isRunning = false
@@ -352,14 +371,6 @@ class AgentActivity : Activity() {
                     return@evaluateJavascript
                 } else {
                     emptyAttempts = 0
-                }
-                
-                // اگر در حال تولید است، صبر می‌کنیم
-                if (isGenerating) {
-                    lastAiText = ""
-                    stableCounter = 0
-                    handler.postDelayed({ checkAiResponse() }, 1000)
-                    return@evaluateJavascript
                 }
                 
                 // اگر پاسخی بدون کد داده شد، تذکر می‌دهیم
