@@ -42,7 +42,7 @@ object NativeInstaller {
                 Os.chmod(tallocDest.absolutePath, 493)
             }
 
-            // ✅ استفاده از \u001B به جای \033 برای رنگ‌ها در کاتلین
+            // ✅ استفاده از \033 برای رنگ‌ها (استاندارد شل) در رشته خام کاتلین
             val askScript = File(prefix, "bin/ask")
             askScript.writeText("""
                 #!/bin/sh
@@ -53,11 +53,11 @@ object NativeInstaller {
                 REQ_FILE="/root/ai_req.txt"
                 RES_FILE="/root/ai_res.txt"
                 echo -n "${'$'}*" > "${'$'}REQ_FILE"
-                echo -e "\u001B[33mWaiting for AI... (Switch to browser if it's not open)\u001B[0m" >&2
+                echo -e "\033[33mWaiting for AI... (Switch to browser if it's not open)\033[0m" >&2
                 while [ ! -f "${'$'}RES_FILE" ]; do
                     sleep 0.5
                 done
-                echo -e "\u001B[32mAI:\u001B[0m"
+                echo -e "\033[32mAI:\033[0m"
                 cat "${'$'}RES_FILE"
                 echo ""
                 rm -f "${'$'}REQ_FILE" "${'$'}RES_FILE"

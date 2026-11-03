@@ -63,10 +63,9 @@ class MainActivity : Activity() {
 
         btnReload.setOnClickListener { webView.reload() }
 
-        webView.loadUrl("https://chat.deepseek.com/") // باز کردن مستقیم دیپ‌سیک
+        webView.loadUrl("https://chat.deepseek.com/")
         requestStoragePermission()
         
-        // ✅ شروع پایش فایل درخواست AI
         startAiWatcher()
     }
 
@@ -76,7 +75,7 @@ class MainActivity : Activity() {
             while (isAiWatcherRunning) {
                 if (reqFile.exists()) {
                     val prompt = reqFile.readText()
-                    reqFile.delete() // پاک کردن فایل پس از خواندن
+                    reqFile.delete()
                     runOnUiThread {
                         executeAiPrompt(prompt)
                     }
@@ -89,7 +88,6 @@ class MainActivity : Activity() {
     private fun executeAiPrompt(prompt: String) {
         val safePrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
         
-        // جاوااسکریپت برای پر کردن فیلد، ارسال، و انتظار برای دریافت پاسخ
         val js = """
             (function() {
                 var ta = document.querySelector('textarea');
@@ -109,7 +107,6 @@ class MainActivity : Activity() {
                 }
                 
                 setTimeout(function() {
-                    // شبیه‌سازی زدن کلید Enter
                     ta.dispatchEvent(new KeyboardEvent('keydown', {
                         key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
                     }));
@@ -119,13 +116,11 @@ class MainActivity : Activity() {
                     var attempts = 0;
                     var interval = setInterval(function() {
                         attempts++;
-                        // پیدا کردن آخرین پیام هوش مصنوعی (کلاس ds-markdown در دیپ‌سیک)
                         var msgs = document.querySelectorAll('.ds-markdown');
                         if (msgs.length > 0) {
                             var currentText = msgs[msgs.length - 1].innerText;
                             if (currentText === lastText && currentText.length > 0) {
                                 stableCount++;
-                                // اگر 2 ثانیه متن تغییر نکرد، یعنی پاسخ کامل شده است
                                 if (stableCount >= 4) {
                                     clearInterval(interval);
                                     AndroidBridge.onAiResponse(currentText);
@@ -135,7 +130,6 @@ class MainActivity : Activity() {
                                 lastText = currentText;
                             }
                         }
-                        // اگر 60 ثانیه طول کشید، تایم‌اوت بده
                         if (attempts > 120) {
                             clearInterval(interval);
                             AndroidBridge.onAiError("Timeout waiting for AI response");

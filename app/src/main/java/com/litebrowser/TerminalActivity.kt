@@ -156,7 +156,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "LC_ALL=C.UTF-8"
             )
 
-            // ✅ اتصال پوشه home اندروید به پوشه /root لینوکس برای اشتراک فایل
             val args = arrayOf(
                 prootBin.absolutePath, "--link2symlink", "-0",
                 "-r", alpineRoot.absolutePath,

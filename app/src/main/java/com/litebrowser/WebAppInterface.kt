@@ -13,6 +13,8 @@ class WebAppInterface(private val context: Context, private val webView: WebView
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             session.write("$command\r".toByteArray())
+        } else {
+            Toast.makeText(context, "هیچ جلسه ترمینالی فعال نیست!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -24,11 +26,11 @@ class WebAppInterface(private val context: Context, private val webView: WebView
             if (session != null && session.isRunning) {
                 val base64Text = android.util.Base64.encodeToString(cleanText?.toByteArray(), android.util.Base64.NO_WRAP)
                 session.write("echo '$base64Text' | base64 -d > /root/scraped.txt\r".toByteArray())
+                Toast.makeText(context, "محتوای صفحه در /root/scraped.txt ذخیره شد", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    // ✅ متد جدید: دریافت پاسخ از AI و ذخیره در فایل
     @JavascriptInterface
     fun onAiResponse(text: String) {
         try {
@@ -39,7 +41,6 @@ class WebAppInterface(private val context: Context, private val webView: WebView
         }
     }
 
-    // ✅ متد جدید: ارسال خطا
     @JavascriptInterface
     fun onAiError(error: String) {
         try {
