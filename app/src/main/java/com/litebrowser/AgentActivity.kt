@@ -175,7 +175,6 @@ class AgentActivity : Activity() {
         
         ensureTerminalSession()
 
-        // ✅ دستور سیستم بسیار قوی‌تر برای مجبور کردن هوش مصنوعی به دادن فقط یک بلوک bash
         val systemPrompt = """
             You are an AI autonomous agent operating inside an Alpine Linux terminal.
             Your goal is to complete the user's task by writing and executing bash commands.
@@ -209,7 +208,6 @@ class AgentActivity : Activity() {
         Logger.i("Agent", "sendToAI called. Sending prompt to DeepSeek...")
         log("📤 Sending prompt to AI...")
         
-        // تبدیل به Base64 برای جلوگیری از خطای کاراکترهای خاص در جاوااسکریپت
         val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         
         val js = """
@@ -277,18 +275,32 @@ class AgentActivity : Activity() {
             return
         }
 
-        // ✅ خواندن کل متن صفحه و تبدیل به Base64 برای ارسال امن به کاتلین
+        // ✅ فقط المان‌های پاسخ هوش مصنوعی (کلاس ds-markdown) را می‌خوانیم
         val js = """
             (function() {
-                var clones = document.body.cloneNode(true);
-                var toRemove = clones.querySelectorAll('textarea, input, header, nav, footer, .ds-icon-button, button, svg');
-                for(var i=0; i<toRemove.length; i++) { toRemove[i].remove(); }
-                var text = clones.innerText;
-                var b64 = btoa(unescape(encodeURIComponent(text)));
+                var msgs = document.querySelectorAll('.ds-markdown');
+                if (msgs.length === 0) {
+                    msgs = document.querySelectorAll('div[class*="markdown"]');
+                }
                 
-                // چک کردن اینکه آیا دکمه Stop (در حال تولید) وجود دارد
+                if (msgs.length === 0) {
+                    return JSON.stringify({ text: "", isGenerating: true });
+                }
+
+                var lastMsg = msgs[msgs.length - 1];
+                var clone = lastMsg.cloneNode(true);
+                var btns = clone.querySelectorAll('button, .ds-icon-button, svg');
+                for(var j=0; j<btns.length; j++) { btns[j].remove(); }
+                var text = clone.innerText.trim();
+                
+                // چک کردن اینکه آیا هوش مصنوعی هنوز در حال تایپ است
                 var isGenerating = document.querySelector('button[aria-label*="Stop"], [class*="stop-button"]') !== null;
+                if (text.endsWith("●") || text.endsWith("▍")) {
+                    isGenerating = true;
+                    text = text.substring(0, text.length - 1);
+                }
                 
+                var b64 = btoa(unescape(encodeURIComponent(text)));
                 return JSON.stringify({ text: b64, isGenerating: isGenerating });
             })();
         """.trimIndent()
@@ -317,26 +329,32 @@ class AgentActivity : Activity() {
                     if (text == lastAiText) {
                         stableCounter++
                         if (stableCounter >= 4) { // ۴ ثانیه ثابت ماند
-                            // لاگ کردن بخشی از متن برای دیباگ
                             Logger.i("Agent", "Stable text detected. Length: ${text.length}")
                             Logger.d("Agent", "Snippet: ${text.take(200)}")
                             
-                            // پیدا کردن آخرین بلوک کد (چه bash چه python)
-                            val regex = Regex("```(?:bash|sh|python)?\\n([\\s\\S]*?)```")
-                            val matches = regex.findAll(text)
-                            val lastMatch = matches.lastOrNull()
-                            
-                            if (lastMatch != null) {
-                                val command = lastMatch.groupValues[1].trim()
-                                Logger.i("Agent", "Extracted command: $command")
-                                log("📥 AI response received.")
+                            // چک کردن اینکه آیا بلوک کد وجود دارد یا خیر
+                            if (text.contains("```")) {
+                                // پیدا کردن آخرین بلوک کد (چه bash چه python)
+                                val regex = Regex("```(?:bash|sh|python)?\\n([\\s\\S]*?)```")
+                                val matches = regex.findAll(text)
+                                val lastMatch = matches.lastOrNull()
+                                
+                                if (lastMatch != null) {
+                                    val command = lastMatch.groupValues[1].trim()
+                                    Logger.i("Agent", "Extracted command: $command")
+                                    log("📥 AI response received.")
+                                    stableCounter = 0
+                                    lastAiText = ""
+                                    aiCheckAttempts = 0
+                                    processAiResponse(command)
+                                    return@evaluateJavascript
+                                }
+                            } else {
+                                // اگر هنوز بلوک کد نیامده، به عنوان پاسخ نهایی در نظر نمی‌گیریم
+                                Logger.w("Agent", "No code block found in stable text. Waiting for AI to generate code...")
+                                // زمان انتظار را ریست می‌کنیم تا فرصت بیشتری بدهیم
                                 stableCounter = 0
                                 lastAiText = ""
-                                aiCheckAttempts = 0
-                                processAiResponse(command)
-                                return@evaluateJavascript
-                            } else {
-                                Logger.w("Agent", "No code block found in stable text.")
                             }
                         }
                     } else {
@@ -358,7 +376,6 @@ class AgentActivity : Activity() {
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             cmdCheckAttempts = 0
-            // برای اطمینان از اینکه خروجی درست است، کاراکترهای اضافی را حذف می‌کنیم
             val execCmd = "$command > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
             session.write(execCmd)
             Logger.i("Agent", "Command sent to terminal.")
