@@ -53,11 +53,9 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         terminalView.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
             override fun onLayoutChange(v: View, left: Int, top: Int, right: Int, bottom: Int, oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int) {
                 if (right > left && bottom > top && !sessionAttached) {
-                    // اگر هیچ جلسه‌ای وجود ندارد، یکی بساز
                     if (TerminalManager.sessions.isEmpty()) {
                         createNewSession(right - left, bottom - top)
                     } else {
-                        // در غیر این صورت به آخرین جلسه وصل شو
                         attachToSession(TerminalManager.sessions.last(), right - left, bottom - top)
                     }
                 }
@@ -89,7 +87,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerSessions.adapter = adapter
         
-        // انتخاب جلسه فعلی در منو
         val currentIndex = TerminalManager.sessions.indexOf(terminalSession)
         if (currentIndex >= 0) {
             spinnerSessions.setSelection(currentIndex)
@@ -159,6 +156,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "LC_ALL=C.UTF-8"
             )
 
+            // ✅ اتصال پوشه home اندروید به پوشه /root لینوکس برای اشتراک فایل
             val args = arrayOf(
                 prootBin.absolutePath, "--link2symlink", "-0",
                 "-r", alpineRoot.absolutePath,
@@ -172,7 +170,6 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             )
             
             TerminalManager.addSession(session)
-            // اتصال به جلسه جدید
             attachToSession(session, viewWidth, viewHeight)
             updateSpinner()
             
@@ -274,13 +271,11 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
             if (terminalSession === session) {
                 terminalSession = null
                 sessionAttached = false
-                // رفتن به جلسه بعدی اگر وجود دارد
                 val nextSession = TerminalManager.sessions.firstOrNull()
                 if (nextSession != null) {
                     attachToSession(nextSession, terminalView.width, terminalView.height)
                 } else {
-                    Toast.makeText(this, "All sessions ended", Toast.LENGTH_SHORT).show()
-                    finish() // بستن صفحه اگر هیچ جلسه‌ای نماند
+                    finish() 
                 }
             }
             updateSpinner()
