@@ -4,15 +4,18 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import com.termux.terminal.TerminalSession
 import java.io.File
+import kotlin.concurrent.thread
 
 class AgentActivity : Activity() {
 
@@ -20,6 +23,7 @@ class AgentActivity : Activity() {
     private lateinit var btnStart: Button
     private lateinit var tvLog: TextView
     private lateinit var webView: WebView
+    private lateinit var progressBar: ProgressBar
     private val handler = Handler(Looper.getMainLooper())
     private var isRunning = false
     private var isPageLoaded = false
@@ -29,31 +33,23 @@ class AgentActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Logger.i("Agent", "AgentActivity onCreate started")
         setContentView(R.layout.activity_agent)
+        Logger.i("Agent", "Layout inflated")
 
         etPrompt = findViewById(R.id.et_agent_prompt)
         btnStart = findViewById(R.id.btn_agent_start)
         tvLog = findViewById(R.id.tv_agent_log)
         webView = findViewById(R.id.agent_webview)
+        progressBar = findViewById(R.id.agent_progress)
 
-        // تنظیمات وب‌ویو برای دریافت کوکی‌های لاگین از صفحه اصلی
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        val cookieManager = CookieManager.getInstance()
-        cookieManager.setAcceptCookie(true)
-        cookieManager.setAcceptThirdPartyCookies(webView, true)
-
-        webView.addJavascriptInterface(WebAppInterface(this, webView), "AndroidBridge")
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                isPageLoaded = true
-                log("✅ DeepSeek page loaded. Ready to start.")
-            }
-        }
-        
-        // بارگذاری دیپ‌سیک
-        webView.loadUrl("https://chat.deepseek.com/")
+        // ✅ به تعویق انداختن راه‌اندازی وب‌ویو تا UI اصلی لود شود و برنامه هنگ نکند
+        handler.postDelayed({
+            Logger.i("Agent", "Setting up WebView")
+            setupWebView()
+            Logger.i("Agent", "Loading DeepSeek URL")
+            webView.loadUrl("https://chat.deepseek.com/")
+        }, 800)
 
         btnStart.setOnClickListener {
             if (isRunning) {
@@ -71,15 +67,46 @@ class AgentActivity : Activity() {
                 Toast.makeText(this, "لطفا یک درخواست وارد کنید", Toast.LENGTH_SHORT).show()
             }
         }
+        Logger.i("Agent", "AgentActivity onCreate finished")
+    }
+
+    private fun setupWebView() {
+        try {
+            webView.settings.javaScriptEnabled = true
+            webView.settings.domStorageEnabled = true
+            val cookieManager = CookieManager.getInstance()
+            cookieManager.setAcceptCookie(true)
+            cookieManager.setAcceptThirdPartyCookies(webView, true)
+
+            webView.addJavascriptInterface(WebAppInterface(this, webView), "AndroidBridge")
+            
+            webView.webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    runOnUiThread { progressBar.visibility = View.VISIBLE }
+                    isPageLoaded = false
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    runOnUiThread { progressBar.visibility = View.GONE }
+                    isPageLoaded = true
+                    log("✅ DeepSeek page loaded. Ready to start.")
+                }
+            }
+        } catch (e: Exception) {
+            Logger.e("Agent", "Failed to setup WebView", e)
+        }
     }
 
     private fun log(msg: String) {
         runOnUiThread {
             logBuilder.append(msg).append("\n")
             tvLog.text = logBuilder.toString()
-            // اسکرول به پایین
-            val scrollView = tvLog.parent as android.view.View
-            (scrollView.parent as android.widget.ScrollView).fullScroll(android.view.View.FOCUS_DOWN)
+            try {
+                val scrollView = tvLog.parent as? ScrollView
+                scrollView?.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+            } catch (e: Exception) { }
         }
     }
 
@@ -108,7 +135,6 @@ class AgentActivity : Activity() {
         """.trimIndent()
 
         sendToAI(systemPrompt)
-        // صبر برای پاسخ اولیه
         handler.postDelayed({ checkAiResponse() }, 3000)
     }
 
@@ -147,6 +173,16 @@ class AgentActivity : Activity() {
         webView.evaluateJavascript(js, null)
     }
 
+    private var lastAiText = ""
+    private fun isResponseStable(text: String): Boolean {
+        if (text == lastAiText) {
+            lastAiText = ""
+            return true
+        }
+        lastAiText = text
+        return false
+    }
+
     private fun checkAiResponse() {
         if (!isRunning) return
 
@@ -168,7 +204,6 @@ class AgentActivity : Activity() {
                 val cleanText = result.replace("\\n", "\n").replace("\\\"", "\"").replace("\"", "")
                 if (cleanText.isNotEmpty() && cleanText != "TASK_COMPLETE") {
                     if (cleanText.length > 10) {
-                        // اگر متن تغییر نکرده بود، یعنی پاسخ کامل است
                         if (isResponseStable(cleanText)) {
                             processAiResponse(cleanText)
                         } else {
@@ -187,16 +222,6 @@ class AgentActivity : Activity() {
                 handler.postDelayed({ checkAiResponse() }, 1000)
             }
         }
-    }
-
-    private var lastAiText = ""
-    private fun isResponseStable(text: String): Boolean {
-        if (text == lastAiText) {
-            lastAiText = ""
-            return true
-        }
-        lastAiText = text
-        return false
     }
 
     private fun processAiResponse(aiText: String) {
@@ -225,21 +250,24 @@ class AgentActivity : Activity() {
     private fun readTerminalOutput(previousAiText: String) {
         if (!isRunning) return
 
-        if (outFile.exists()) {
-            val content = outFile.readText()
-            if (content.contains("##DONE##")) {
-                val output = content.replace("##DONE##", "").trim()
-                log("\n📄 Output:\n$output\n")
-                outFile.delete() 
-                
-                val nextPrompt = "Command Output:\n$output\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
-                sendToAI(nextPrompt)
-                handler.postDelayed({ checkAiResponse() }, 3000)
+        // ✅ خواندن فایل در ترد پس‌زمینه برای جلوگیری از هنگ کردن UI
+        thread {
+            if (outFile.exists()) {
+                val content = outFile.readText()
+                if (content.contains("##DONE##")) {
+                    val output = content.replace("##DONE##", "").trim()
+                    log("\n📄 Output:\n$output\n")
+                    outFile.delete() 
+                    
+                    val nextPrompt = "Command Output:\n$output\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
+                    runOnUiThread { sendToAI(nextPrompt) }
+                    handler.postDelayed({ checkAiResponse() }, 3000)
+                } else {
+                    handler.postDelayed({ readTerminalOutput(previousAiText) }, 1000)
+                }
             } else {
                 handler.postDelayed({ readTerminalOutput(previousAiText) }, 1000)
             }
-        } else {
-            handler.postDelayed({ readTerminalOutput(previousAiText) }, 1000)
         }
     }
 
