@@ -17,20 +17,22 @@ import android.widget.TextView
 import android.widget.Toast
 import com.termux.terminal.TerminalSession
 import java.io.File
+import kotlin.concurrent.thread
 
 class AgentActivity : Activity() {
 
     private lateinit var etPrompt: EditText
     private lateinit var btnStart: Button
     private lateinit var tvLog: TextView
+    private lateinit var tvStatus: TextView
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private val handler = Handler(Looper.getMainLooper())
     private var isRunning = false
     private var isPageLoaded = false
     private val logBuilder = StringBuilder()
+    private var lastStatusLine = ""
 
-    // فایل بافر برای کدهای سنگین
     private val agentCodeFile by lazy { File(filesDir, "home/agent_code.txt") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,6 +43,7 @@ class AgentActivity : Activity() {
         etPrompt = findViewById(R.id.et_agent_prompt)
         btnStart = findViewById(R.id.btn_agent_start)
         tvLog = findViewById(R.id.tv_agent_log)
+        tvStatus = findViewById(R.id.tv_agent_status)
         webView = findViewById(R.id.agent_webview)
         progressBar = findViewById(R.id.agent_progress)
 
@@ -154,9 +157,23 @@ class AgentActivity : Activity() {
         }
     }
 
+    private fun updateStatus(status: String) {
+        if (status == lastStatusLine) return
+        lastStatusLine = status
+        runOnUiThread {
+            if (status.isEmpty()) {
+                tvStatus.visibility = View.GONE
+            } else {
+                tvStatus.visibility = View.VISIBLE
+                tvStatus.text = "⏳ $status"
+            }
+        }
+    }
+
     private fun startAgent(prompt: String) {
         isRunning = true
         logBuilder.clear()
+        updateStatus("")
         log("🤖 Starting Agent with task: $prompt\n")
         Logger.i("Agent", "startAgent called: $prompt")
         
@@ -229,10 +246,10 @@ class AgentActivity : Activity() {
         if (!isRunning) return
         aiCheckAttempts++
         
-        // ✅ افزایش تایم‌اوت به ۵ دقیقه (۳۰۰ ثانیه) برای پاسخ‌های سنگین
         if (aiCheckAttempts > 300) {
             log("❌ Error: Total timeout waiting for AI response.")
             Logger.e("Agent", "Total timeout waiting for AI response.")
+            updateStatus("")
             isRunning = false
             return
         }
@@ -280,7 +297,6 @@ class AgentActivity : Activity() {
                         isGenerating = true;
                     }
 
-                    // ✅ ارسال کد به فایل بافر در اندروید (بدون محدودیت طول)
                     if (hasCode && !isGenerating) {
                         lastMd.setAttribute('data-processed', 'true');
                         AndroidBridge.saveAgentCode(codeText);
@@ -313,6 +329,7 @@ class AgentActivity : Activity() {
                 
                 if (taskComplete) {
                     log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.")
+                    updateStatus("")
                     Logger.i("Agent", "Task Complete received from AI.")
                     isRunning = false
                     return@evaluateJavascript
@@ -328,10 +345,9 @@ class AgentActivity : Activity() {
                     return@evaluateJavascript
                 }
                 
-                // ✅ خواندن کد از فایل بافر
                 if (agentCodeFile.exists()) {
                     val text = agentCodeFile.readText().trim()
-                    agentCodeFile.delete() // پاک کردن فایل برای پاسخ بعدی
+                    agentCodeFile.delete() 
                     
                     if (text.isNotEmpty()) {
                         log("📥 AI response received. (${text.length} chars)")
@@ -364,7 +380,8 @@ class AgentActivity : Activity() {
             
             session.write(execCmd)
             log("⏳ Executing...")
-            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1000)
+            updateStatus("Starting execution...")
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1500)
         } else {
             log("❌ Error: No terminal session.")
             isRunning = false
@@ -374,41 +391,59 @@ class AgentActivity : Activity() {
     private fun readTerminalOutput(startMarker: String, endMarker: String, attempts: Int) {
         if (!isRunning) return
         
-        // ✅ افزایش زمان انتظار دستورات ترمینال به ۵ دقیقه (۳۰۰ ثانیه)
         if (attempts > 300) { 
             log("❌ Error: Command execution timed out.")
+            updateStatus("")
             isRunning = false
             return
         }
 
         val session = TerminalManager.sessions.firstOrNull()
-        val screenText = session?.emulator?.screen?.getTranscriptText() ?: ""
-        val cleanScreenText = screenText.replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "")
+        if (session == null) {
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 2000)
+            return
+        }
 
-        if (cleanScreenText.contains(endMarker)) {
-            val startIndex = cleanScreenText.lastIndexOf(startMarker)
-            val endIndex = cleanScreenText.lastIndexOf(endMarker)
+        thread {
+            val screenText = session.emulator?.screen?.getTranscriptText() ?: ""
             
-            var output = if (startIndex != -1 && endIndex != -1) {
-                cleanScreenText.substring(startIndex + startMarker.length, endIndex).trim()
+            if (screenText.contains(endMarker)) {
+                val startIndex = screenText.lastIndexOf(startMarker)
+                val endIndex = screenText.lastIndexOf(endMarker)
+                
+                if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+                    val rawOutput = screenText.substring(startIndex + startMarker.length, endIndex)
+                    
+                    val cleanOutput = rawOutput.replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "")
+                        .lines().filterNot { it.contains("sh /root/run_agent.sh") || it.contains("echo \"___AGENT") }
+                        .joinToString("\n").trim()
+
+                    var finalOutput = if (cleanOutput.isEmpty()) "Command executed successfully (no output)." else cleanOutput
+
+                    if (finalOutput.length > 5000) {
+                        finalOutput = finalOutput.take(5000) + "\n... (output truncated due to size)"
+                    }
+
+                    runOnUiThread {
+                        updateStatus("") 
+                        log("\n📄 Output:\n$finalOutput\n")
+                        val nextPrompt = "Command Output:\n$finalOutput\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
+                        sendToAI(nextPrompt)
+                        handler.postDelayed({ checkAiResponse() }, 3000)
+                    }
+                    return@thread
+                }
             } else {
-                "Command executed successfully (no output)."
+                val lines = screenText.trim().lines()
+                if (lines.isNotEmpty()) {
+                    val lastLine = lines.last().replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "").trim()
+                    if (lastLine.isNotEmpty() && (lastLine.contains("%") || lastLine.length < 100)) {
+                        runOnUiThread { updateStatus(lastLine) }
+                    }
+                }
             }
-
-            output = output.lines().filterNot { it.contains("sh /root/run_agent.sh") || it.contains("echo \"___AGENT") }.joinToString("\n").trim()
-            if (output.isEmpty()) output = "Command executed successfully (no output)."
-
-            // ✅ افزایش حجم خروجی ارسالی به هوش مصنوعی از ۱۵۰۰ به ۵۰۰۰ کاراکتر
-            if (output.length > 5000) {
-                output = output.take(5000) + "\n... (output truncated due to size)"
-            }
-
-            log("\n📄 Output:\n$output\n")
-            val nextPrompt = "Command Output:\n$output\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
-            sendToAI(nextPrompt)
-            handler.postDelayed({ checkAiResponse() }, 3000)
-        } else {
-            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 1000)
+            
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 2000)
         }
     }
 

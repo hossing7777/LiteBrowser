@@ -49,7 +49,6 @@ class WebAppInterface(private val context: Context, private val webView: WebView
         Toast.makeText(context, "Agent Error: $error", Toast.LENGTH_LONG).show()
     }
 
-    // ✅ ذخیره کد استخراج شده در فایل بافر
     @JavascriptInterface
     fun saveAgentCode(text: String) {
         try {
