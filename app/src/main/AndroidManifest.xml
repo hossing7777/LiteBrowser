@@ -53,8 +53,14 @@
             </intent-filter>
         </activity>
         
-    <activity
+        <activity
             android:name=".TerminalActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- ✅ ثبت کردن AgentActivity در اینجا اضافه شد -->
+        <activity
+            android:name=".AgentActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
     </application>
