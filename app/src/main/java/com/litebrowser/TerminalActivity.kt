@@ -11,6 +11,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.InputMethodManager
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.Spinner
@@ -65,15 +66,15 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
     }
 
     private fun setupSpinner() {
-        spinnerSessions.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+        spinnerSessions.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (isUpdatingSpinner) return
                 val session = TerminalManager.sessions.getOrNull(position)
                 if (session != null && session != terminalSession) {
                     attachToSession(session, terminalView.width, terminalView.height)
                 }
             }
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
 

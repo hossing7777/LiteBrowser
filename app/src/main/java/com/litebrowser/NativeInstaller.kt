@@ -26,23 +26,22 @@ object NativeInstaller {
             }
             File(alpineRoot, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
 
-            val nativeDir = nativeDir(context)
+            val nativeDirFile = nativeDir(context)
             
             val busyboxDest = File(prefix, "bin/busybox")
-            val busyboxSrc = File(nativeDir, "libbusybox.so")
+            val busyboxSrc = File(nativeDirFile, "libbusybox.so")
             if (busyboxSrc.exists()) {
                 busyboxSrc.copyTo(busyboxDest, overwrite = true)
                 Os.chmod(busyboxDest.absolutePath, 493)
             }
 
             val tallocDest = File(prefix, "lib/libtalloc.so.2")
-            val tallocSrc = File(nativeDir, "libtalloc.so")
+            val tallocSrc = File(nativeDirFile, "libtalloc.so")
             if (tallocSrc.exists()) {
                 tallocSrc.copyTo(tallocDest, overwrite = true)
                 Os.chmod(tallocDest.absolutePath, 493)
             }
 
-            // ✅ استفاده از \033 برای رنگ‌ها (استاندارد شل) در رشته خام کاتلین
             val askScript = File(prefix, "bin/ask")
             askScript.writeText("""
                 #!/bin/sh
