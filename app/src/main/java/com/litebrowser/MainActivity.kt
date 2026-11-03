@@ -108,32 +108,38 @@ class MainActivity : Activity() {
                     var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
                     nativeSetter.call(ta, "$safePrompt");
                     ta.dispatchEvent(new Event('input', { bubbles: true }));
+                    ta.dispatchEvent(new Event('change', { bubbles: true }));
                 }
                 
                 setTimeout(function() {
-                    // ۱. تلاش برای شبیه‌سازی زدن کلید Enter
-                    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                    
-                    // ۲. پیدا کردن دکمه ارسال (Send) و کلیک روی آن
-                    var parent = ta.parentNode;
-                    var btnClicked = false;
-                    while (parent && !btnClicked) {
-                        var buttons = parent.querySelectorAll('button');
-                        if (buttons.length > 0) {
-                            // دکمه ارسال معمولاً آخرین دکمه دارای آیکون (SVG) است
-                            for (var i = buttons.length - 1; i >= 0; i--) {
-                                if (buttons[i].querySelector('svg') && !buttons[i].disabled) {
-                                    buttons[i].click();
-                                    btnClicked = true;
-                                    break;
-                                }
+                    // پیدا کردن دکمه ارسال: دکمه‌ای که داخلش آیکون (SVG) دارد و غیرفعال نیست
+                    var buttons = document.querySelectorAll('button');
+                    var clicked = false;
+                    for (var i = buttons.length - 1; i >= 0; i--) {
+                        var btn = buttons[i];
+                        if (btn.querySelector('svg') && !btn.disabled && btn.offsetWidth > 0) {
+                            // بررسی اینکه دکمه در سمت راست صفحه است (دکمه ارسال)
+                            var rect = btn.getBoundingClientRect();
+                            var taRect = ta.getBoundingClientRect();
+                            if (rect.left > taRect.left + (taRect.width / 2)) {
+                                btn.click();
+                                clicked = true;
+                                break;
                             }
                         }
-                        parent = parent.parentNode;
-                        if (parent === document.body) break;
+                    }
+                    
+                    // اگر دکمه پیدا نشد، کلید Enter را شبیه‌سازی کن
+                    if (!clicked) {
+                        var events = ['keydown', 'keypress', 'keyup'];
+                        for (var k = 0; k < events.length; k++) {
+                            ta.dispatchEvent(new KeyboardEvent(events[k], {
+                                key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
+                            }));
+                        }
                     }
 
-                    // ۳. نظارت بر پاسخ دیپ‌سیک
+                    // نظارت بر پاسخ دیپ‌سیک
                     var lastText = "";
                     var stableCount = 0;
                     var attempts = 0;
@@ -158,7 +164,7 @@ class MainActivity : Activity() {
                             AndroidBridge.onAiError("Timeout waiting for AI response");
                         }
                     }, 500);
-                }, 500);
+                }, 1000); // ۱ ثانیه صبر می‌کنیم تا React متن را پردازش کند
             })();
         """.trimIndent()
         

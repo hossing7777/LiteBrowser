@@ -42,7 +42,7 @@ object NativeInstaller {
                 Os.chmod(tallocDest.absolutePath, 493)
             }
 
-            // ✅ اضافه شدن تایم‌اوت به اسکریپت
+            // ✅ تایم‌اوت استاندارد ۶۰ ثانیه‌ای برای جلوگیری از قفل شدن ترمینال
             val askScript = File(prefix, "bin/ask")
             askScript.writeText("""
                 #!/bin/sh
@@ -55,11 +55,11 @@ object NativeInstaller {
                 echo -n "${'$'}*" > "${'$'}REQ_FILE"
                 echo -e "\033[33mWaiting for AI... (Switch to browser if it's not open)\033[0m" >&2
                 
-                timeout=120
+                count=0
                 while [ ! -f "${'$'}RES_FILE" ]; do
                     sleep 0.5
-                    timeout=${'$'}((timeout-1))
-                    if [ ${'$'}timeout -le 0 ]; then
+                    count=${'$'}((count+1))
+                    if [ ${'$'}count -ge 120 ]; then
                         echo -e "\033[31mError: Timeout waiting for AI response\033[0m" >&2
                         rm -f "${'$'}REQ_FILE"
                         exit 1
