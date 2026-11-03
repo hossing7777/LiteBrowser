@@ -110,6 +110,8 @@ class AgentActivity : Activity() {
             )
 
             val session = TerminalSession(prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager)
+            // ✅ باگ اصلی اینجا بود: باید حتما سایز را تنظیم کنیم تا خروجی در حافظه ثبت شود
+            session.updateSize(80, 24) 
             TerminalManager.addSession(session)
         }
     }
@@ -244,8 +246,8 @@ class AgentActivity : Activity() {
                     if (pres.length > 0) {
                         var lastPre = pres[pres.length - 1];
                         codeText = lastPre.innerText || lastPre.textContent || "";
-                        // حذف دکمه Copy. کلمه Download را حذف نمی‌کنیم!
-                        codeText = codeText.replace(/^Copy\s*\n?/i, "").trim();
+                        // پاکسازی هدرهای دیپ‌سیک
+                        codeText = codeText.replace(/^Copy\s*\n?/i, "").replace(/^bash\s*\n?/i, "").replace(/^sh\s*\n?/i, "").trim();
                         hasCode = true;
                     } else {
                         var markdowns = document.querySelectorAll('.ds-markdown, div[class*="markdown"]');
@@ -332,22 +334,22 @@ class AgentActivity : Activity() {
         
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
-            // ✅ راه‌حل جدید: نوشتن دستور در یک اسکریپت و اجرای اسکریپت
             val scriptFile = File(filesDir, "home/run_agent.sh")
-            val cleanCommand = command.replace("\r\n", "\n")
+            // حذف \r اضافی و اطمینان از وجود \n در انتهای فایل
+            val cleanCommand = command.replace("\r", "").trim() + "\n"
             scriptFile.writeText(cleanCommand)
             
-            val startMarker = "___AGENT_START_123___"
-            val endMarker = "___AGENT_END_123___"
+            val startMarker = "___AGENT_START___"
+            val endMarker = "___AGENT_END___"
             
-            // اجرای اسکریپت به جای تایپ مستقیم متن چند خطی
-            val execCmd = "echo \"$startMarker\"; sh /root/run_agent.sh; echo \"$endMarker\"\r"
+            // اجرای اسکریپت با /dev/null برای جلوگیری از هنگ کردن در صورت نیاز به ورودی
+            val execCmd = "echo \"$startMarker\"; sh /root/run_agent.sh < /dev/null; echo \"$endMarker\"\r"
             
             session.write(execCmd)
             log("⏳ Executing...")
             Logger.i("Agent", "Executing script file...")
             
-            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1500)
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1000)
         } else {
             log("❌ Error: No terminal session.")
             Logger.e("Agent", "No terminal session.")
@@ -358,25 +360,32 @@ class AgentActivity : Activity() {
     private fun readTerminalOutput(startMarker: String, endMarker: String, attempts: Int) {
         if (!isRunning) return
         
-        if (attempts > 60) {
+        if (attempts > 30) { // ۳۰ ثانیه فرصت کافی است
             log("❌ Error: Command execution timed out.")
-            Logger.e("Agent", "Command execution timed out after 60s.")
+            Logger.e("Agent", "Command execution timed out.")
             isRunning = false
             return
         }
 
         val session = TerminalManager.sessions.firstOrNull()
         val screenText = session?.emulator?.screen?.getTranscriptText() ?: ""
+        
+        // پاکسازی کدهای رنگی ترمینال برای جلوگیری از خطای عدم تطابق
+        val cleanScreenText = screenText.replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "")
 
-        if (screenText.contains(endMarker)) {
-            val startIndex = screenText.indexOf(startMarker)
-            val endIndex = screenText.indexOf(endMarker)
+        if (cleanScreenText.contains(endMarker)) {
+            val startIndex = cleanScreenText.lastIndexOf(startMarker)
+            val endIndex = cleanScreenText.lastIndexOf(endMarker)
             
             var output = if (startIndex != -1 && endIndex != -1) {
-                screenText.substring(startIndex + startMarker.length, endIndex).trim()
+                cleanScreenText.substring(startIndex + startMarker.length, endIndex).trim()
             } else {
-                "Command executed (no output captured)"
+                "Command executed successfully (no output)."
             }
+
+            // حذف خطوط مربوط به تایپ شدن دستورات در ترمینال از خروجی
+            output = output.lines().filterNot { it.contains("sh /root/run_agent.sh") || it.contains("echo \"___AGENT") }.joinToString("\n").trim()
+            if (output.isEmpty()) output = "Command executed successfully (no output)."
 
             if (output.length > 1500) {
                 output = output.take(1500) + "\n... (output truncated)"
