@@ -12,7 +12,8 @@ class WebAppInterface(private val context: Context, private val webView: WebView
     fun runTerminalCommand(command: String) {
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
-            session.write("$command\r".toByteArray())
+            // ✅ استفاده از متد String برای write
+            session.write("$command\r")
         } else {
             Toast.makeText(context, "هیچ جلسه ترمینالی فعال نیست!", Toast.LENGTH_SHORT).show()
         }
@@ -24,8 +25,9 @@ class WebAppInterface(private val context: Context, private val webView: WebView
             val cleanText = result?.replace("\"", "")?.replace("\\n", "\n")
             val session = TerminalManager.sessions.firstOrNull()
             if (session != null && session.isRunning) {
-                val base64Text = android.util.Base64.encodeToString(cleanText?.toByteArray(), android.util.Base64.NO_WRAP)
-                session.write("echo '$base64Text' | base64 -d > /root/scraped.txt\r".toByteArray())
+                val base64Text = android.util.Base64.encodeToString(cleanText?.toByteArray() ?: ByteArray(0), android.util.Base64.NO_WRAP)
+                // ✅ استفاده از متد String برای write
+                session.write("echo '$base64Text' | base64 -d > /root/scraped.txt\r")
                 Toast.makeText(context, "محتوای صفحه در /root/scraped.txt ذخیره شد", Toast.LENGTH_SHORT).show()
             }
         }

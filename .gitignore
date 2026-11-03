@@ -4,3 +4,4 @@ build/
 local.properties
 .idea/
 proot-engine/src/main/jniLibs*
+pr-source/
