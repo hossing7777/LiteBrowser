@@ -163,6 +163,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 prootBin.absolutePath, "--link2symlink", "-0",
                 "-r", alpineRoot.absolutePath,
                 "-b", "/dev", "-b", "/proc", "-b", "/sys",
+                "-b", homeDir.absolutePath, "-b", "/root",
                 "-w", "/root", "/bin/sh", "-l"
             )
 

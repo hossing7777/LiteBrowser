@@ -21,11 +21,9 @@ object NativeInstaller {
             tmpDir.setExecutable(true, false)
 
             val alpineRoot = File(prefix, "var/lib/pr/installed-rootfs/alpine")
-            // ✅ ایجاد تمام دایرکتوری‌های ضروری از جمله dev/shm
-            for (d in listOf("tmp", "proc", "sys", "dev", "dev/pts", "dev/shm", "etc")) {
+            for (d in listOf("tmp", "proc", "sys", "dev", "etc", "dev/pts", "dev/shm")) {
                 File(alpineRoot, d).mkdirs()
             }
-            
             File(alpineRoot, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
 
             val nativeDir = nativeDir(context)
@@ -43,6 +41,29 @@ object NativeInstaller {
                 tallocSrc.copyTo(tallocDest, overwrite = true)
                 Os.chmod(tallocDest.absolutePath, 493)
             }
+
+            // ✅ ساخت اسکریپت ask برای ارتباط با هوش مصنوعی
+            val askScript = File(prefix, "bin/ask")
+            askScript.writeText("""
+                #!/bin/sh
+                if [ -z "${'$'}1" ]; then
+                    echo "Usage: ask <prompt>"
+                    exit 1
+                fi
+                REQ_FILE="/root/ai_req.txt"
+                RES_FILE="/root/ai_res.txt"
+                echo -n "${'$'}*" > "${'$'}REQ_FILE"
+                echo -e "\033[33mWaiting for AI... (Switch to browser if it's not open)\033[0m" >&2
+                while [ ! -f "${'$'}RES_FILE" ]; do
+                    sleep 0.5
+                done
+                echo -e "\033[32mAI:\033[0m"
+                cat "${'$'}RES_FILE"
+                echo ""
+                rm -f "${'$'}REQ_FILE" "${'$'}RES_FILE"
+            """.trimIndent())
+            Os.chmod(askScript.absolutePath, 493)
+
         } catch (e: Exception) {
             Logger.e("NativeInstaller", "install failed", e)
         }

@@ -16,6 +16,7 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
+import java.io.File
 
 class MainActivity : Activity() {
 
@@ -23,6 +24,7 @@ class MainActivity : Activity() {
     private lateinit var urlBar: EditText
     private lateinit var btnTerminal: Button
     private lateinit var btnReload: Button
+    private var isAiWatcherRunning = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +39,9 @@ class MainActivity : Activity() {
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+        
+        webView.addJavascriptInterface(WebAppInterface(this, webView), "AndroidBridge")
+
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
@@ -58,34 +63,108 @@ class MainActivity : Activity() {
 
         btnReload.setOnClickListener { webView.reload() }
 
-        webView.loadUrl("https://www.google.com")
-
-        // درخواست دسترسی storage
+        webView.loadUrl("https://chat.deepseek.com/") // باز کردن مستقیم دیپ‌سیک
         requestStoragePermission()
+        
+        // ✅ شروع پایش فایل درخواست AI
+        startAiWatcher()
+    }
+
+    private fun startAiWatcher() {
+        val reqFile = File(filesDir, "home/ai_req.txt")
+        Thread {
+            while (isAiWatcherRunning) {
+                if (reqFile.exists()) {
+                    val prompt = reqFile.readText()
+                    reqFile.delete() // پاک کردن فایل پس از خواندن
+                    runOnUiThread {
+                        executeAiPrompt(prompt)
+                    }
+                }
+                Thread.sleep(500)
+            }
+        }.start()
+    }
+
+    private fun executeAiPrompt(prompt: String) {
+        val safePrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
+        
+        // جاوااسکریپت برای پر کردن فیلد، ارسال، و انتظار برای دریافت پاسخ
+        val js = """
+            (function() {
+                var ta = document.querySelector('textarea');
+                if (!ta) {
+                    ta = document.querySelector('div[contenteditable="true"]');
+                    if (ta) {
+                        ta.innerText = "$safePrompt";
+                        ta.dispatchEvent(new Event('input', { bubbles: true }));
+                    } else {
+                        AndroidBridge.onAiError("Textarea not found. Are you logged in and on DeepSeek?");
+                        return;
+                    }
+                } else {
+                    var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
+                    nativeSetter.call(ta, "$safePrompt");
+                    ta.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                
+                setTimeout(function() {
+                    // شبیه‌سازی زدن کلید Enter
+                    ta.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
+                    }));
+                    
+                    var lastText = "";
+                    var stableCount = 0;
+                    var attempts = 0;
+                    var interval = setInterval(function() {
+                        attempts++;
+                        // پیدا کردن آخرین پیام هوش مصنوعی (کلاس ds-markdown در دیپ‌سیک)
+                        var msgs = document.querySelectorAll('.ds-markdown');
+                        if (msgs.length > 0) {
+                            var currentText = msgs[msgs.length - 1].innerText;
+                            if (currentText === lastText && currentText.length > 0) {
+                                stableCount++;
+                                // اگر 2 ثانیه متن تغییر نکرد، یعنی پاسخ کامل شده است
+                                if (stableCount >= 4) {
+                                    clearInterval(interval);
+                                    AndroidBridge.onAiResponse(currentText);
+                                }
+                            } else {
+                                stableCount = 0;
+                                lastText = currentText;
+                            }
+                        }
+                        // اگر 60 ثانیه طول کشید، تایم‌اوت بده
+                        if (attempts > 120) {
+                            clearInterval(interval);
+                            AndroidBridge.onAiError("Timeout waiting for AI response");
+                        }
+                    }, 500);
+                }, 500);
+            })();
+        """.trimIndent()
+        
+        webView.evaluateJavascript(js, null)
+        Toast.makeText(this, "سوال به هوش مصنوعی ارسال شد...", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onDestroy() {
+        isAiWatcherRunning = false
+        super.onDestroy()
     }
 
     private fun requestStoragePermission() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // Android 11+ → MANAGE_EXTERNAL_STORAGE
                 if (!Environment.isExternalStorageManager()) {
-                    Logger.i("Browser", "Requesting MANAGE_EXTERNAL_STORAGE")
-                    Toast.makeText(this, "برای دسترسی به فایل‌ها، به تنظیمات بروید", Toast.LENGTH_LONG).show()
                     val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
                     intent.data = Uri.parse("package:$packageName")
                     startActivity(intent)
                 }
             } else {
-                // Android 10 و پایین‌تر
-                if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    != PackageManager.PERMISSION_GRANTED) {
-                    requestPermissions(
-                        arrayOf(
-                            Manifest.permission.READ_EXTERNAL_STORAGE,
-                            Manifest.permission.WRITE_EXTERNAL_STORAGE
-                        ),
-                        100
-                    )
+                if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 100)
                 }
             }
         } catch (e: Exception) {
