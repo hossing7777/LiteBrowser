@@ -163,6 +163,7 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
                 "-r", alpineRoot.absolutePath,
                 "-b", "/dev", "-b", "/proc", "-b", "/sys",
                 "-b", "${homeDir.absolutePath}:/root",
+                "-b", "/storage/emulated/0/Download/Local_AI_Models/Library_Cache:/mnt/cache",
                 "-b", "${prefixDir.absolutePath}/bin:/usr/local/bin",
                 "-w", "/root", "/bin/sh", "-l"
             )

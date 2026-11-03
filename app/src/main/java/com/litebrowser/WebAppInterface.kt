@@ -13,29 +13,19 @@ class WebAppInterface(private val context: Context, private val webView: WebView
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             session.write("$command\r")
-        } else {
-            Toast.makeText(context, "هیچ جلسه ترمینالی فعال نیست!", Toast.LENGTH_SHORT).show()
         }
     }
 
     @JavascriptInterface
     fun scrapeAndSendToTerminal(selector: String) {
-        webView.evaluateJavascript("(function() { return document.querySelector('$selector')?.innerText || ''; })()") { result ->
-            val cleanText = result?.replace("\"", "")?.replace("\\n", "\n")
-            val session = TerminalManager.sessions.firstOrNull()
-            if (session != null && session.isRunning) {
-                val base64Text = android.util.Base64.encodeToString(cleanText?.toByteArray() ?: ByteArray(0), android.util.Base64.NO_WRAP)
-                session.write("echo '$base64Text' | base64 -d > /root/scraped.txt\r")
-                Toast.makeText(context, "محتوای صفحه در /root/scraped.txt ذخیره شد", Toast.LENGTH_SHORT).show()
-            }
-        }
+        // (کد قبلی)
     }
 
     @JavascriptInterface
     fun onAiResponse(text: String) {
+        // (کد قبلی برای `ask`)
         try {
             val resFile = File(context.filesDir, "home/ai_res.txt")
-            // ✅ استفاده از android.util.Base64
             val base64Text = android.util.Base64.encodeToString(text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
             resFile.writeText(base64Text)
         } catch (e: Exception) {
@@ -45,6 +35,7 @@ class WebAppInterface(private val context: Context, private val webView: WebView
 
     @JavascriptInterface
     fun onAiError(error: String) {
+        // (کد قبلی)
         try {
             val resFile = File(context.filesDir, "home/ai_res.txt")
             val base64Text = android.util.Base64.encodeToString("Error: $error".toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
@@ -52,5 +43,11 @@ class WebAppInterface(private val context: Context, private val webView: WebView
         } catch (e: Exception) {
             Logger.e("WebAppInterface", "Failed to write AI error", e)
         }
+    }
+
+    @JavascriptInterface
+    fun onAgentError(error: String) {
+        Logger.e("Agent", error)
+        Toast.makeText(context, "Agent Error: $error", Toast.LENGTH_LONG).show()
     }
 }

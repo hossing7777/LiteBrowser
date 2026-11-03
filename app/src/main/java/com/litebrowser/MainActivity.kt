@@ -24,6 +24,7 @@ class MainActivity : Activity() {
     private lateinit var urlBar: EditText
     private lateinit var btnTerminal: Button
     private lateinit var btnReload: Button
+    private lateinit var btnAgent: Button
     private var isAiWatcherRunning = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,6 +37,7 @@ class MainActivity : Activity() {
         urlBar = findViewById(R.id.url_bar)
         btnTerminal = findViewById(R.id.btn_terminal)
         btnReload = findViewById(R.id.btn_reload)
+        btnAgent = findViewById(R.id.btn_agent)
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -55,6 +57,10 @@ class MainActivity : Activity() {
                 return@setOnKeyListener true
             }
             false
+        }
+
+        btnAgent.setOnClickListener {
+            startActivity(Intent(this, AgentActivity::class.java))
         }
 
         btnTerminal.setOnClickListener {

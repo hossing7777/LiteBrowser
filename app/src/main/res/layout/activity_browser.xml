@@ -5,7 +5,6 @@
     android:orientation="vertical"
     android:background="#FFFFFF">
 
-    <!-- نوار آدرس + دکمه‌ها -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -26,7 +25,17 @@
             android:background="#FFFFFF"
             android:padding="10dp" />
 
-        <!-- دکمه ترمینال -->
+        <Button
+            android:id="@+id/btn_agent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:text="🤖 AI"
+            android:textSize="12sp"
+            android:minWidth="48dp"
+            android:backgroundTint="#4CAF50"
+            android:textColor="#FFFFFF" />
+
         <Button
             android:id="@+id/btn_terminal"
             android:layout_width="wrap_content"
@@ -38,7 +47,6 @@
             android:minWidth="48dp"
             android:paddingHorizontal="12dp" />
 
-        <!-- دکمه reload -->
         <Button
             android:id="@+id/btn_reload"
             android:layout_width="wrap_content"
@@ -51,7 +59,6 @@
 
     </LinearLayout>
 
-    <!-- WebView -->
     <WebView
         android:id="@+id/webview"
         android:layout_width="match_parent"
