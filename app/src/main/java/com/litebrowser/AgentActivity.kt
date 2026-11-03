@@ -32,6 +32,7 @@ class AgentActivity : Activity() {
     private val logBuilder = StringBuilder()
 
     private val outFile by lazy { File(filesDir, "home/agent_out.txt") }
+    private val agentCodeFile by lazy { File(filesDir, "home/agent_code.txt") } // فایل بافر
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,6 +44,11 @@ class AgentActivity : Activity() {
         tvLog = findViewById(R.id.tv_agent_log)
         webView = findViewById(R.id.agent_webview)
         progressBar = findViewById(R.id.agent_progress)
+
+        // ✅ افزایش ارتفاع WebView در کد به ۱۲۰۰ پیکسل تا دیپ‌سیک پاسخ را رندر کند
+        val params = webView.layoutParams
+        params.height = 1200
+        webView.layoutParams = params
 
         handler.postDelayed({
             Logger.i("Agent", "Setting up WebView")
@@ -222,19 +228,14 @@ class AgentActivity : Activity() {
                     }
                     
                     setTimeout(function() {
-                        // روش اول: فشردن کلید Enter
                         ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                        
-                        // روش دوم: پیدا کردن دکمه ارسال با آیکون
                         var buttons = document.querySelectorAll('button, div[role="button"]');
                         var clicked = false;
                         for (var i = buttons.length - 1; i >= 0; i--) {
                             var btn = buttons[i];
-                            // بررسی دکمه‌های حاوی آیکون ارسال
                             if (btn.innerHTML.includes('svg') && btn.offsetWidth > 0) {
                                 var rect = btn.getBoundingClientRect();
                                 var taRect = ta.getBoundingClientRect();
-                                // دکمه سمت راست کادر متن
                                 if (rect.left > taRect.left + (taRect.width / 2) && rect.top > taRect.top) {
                                     btn.click();
                                     clicked = true;
@@ -253,8 +254,6 @@ class AgentActivity : Activity() {
         webView.evaluateJavascript(js, null)
     }
 
-    private var lastAiText = ""
-    private var stableCounter = 0
     private var aiCheckAttempts = 0
     private var emptyAttempts = 0
 
@@ -275,50 +274,45 @@ class AgentActivity : Activity() {
         val js = """
             (function() {
                 try {
-                    var text = "";
-                    var hasCode = false;
+                    // اسکرول به پایین برای رندر شدن پاسخ
+                    window.scrollTo(0, document.body.scrollHeight);
                     
-                    // 1. جستجوی مستقیم برای بلوک کد در کل صفحه
+                    var codeText = "";
+                    var hasCode = false;
+                    var isGenerating = false;
+                    
                     var pres = document.querySelectorAll('pre');
                     if (pres.length > 0) {
                         var lastPre = pres[pres.length - 1];
-                        text = lastPre.innerText || lastPre.textContent || "";
-                        text = text.replace(/Copy/g, "").replace(/Download/g, "").trim();
+                        codeText = lastPre.innerText || lastPre.textContent || "";
+                        codeText = codeText.replace(/Copy/g, "").replace(/Download/g, "").trim();
                         hasCode = true;
                     } else {
-                        // 2. اگر pre نبود، مارک‌داون را بگیر
-                        var markdowns = document.querySelectorAll('.ds-markdown, div[class*="markdown"]');
-                        if (markdowns.length > 0) {
-                            var lastMd = markdowns[markdowns.length - 1];
-                            text = lastMd.innerText || lastMd.textContent || "";
-                            var match = text.match(/```(?:bash|sh|shell|console|text)?\s*([\s\S]*?)```/);
-                            if (match) {
-                                text = match[1].trim();
-                                hasCode = true;
-                            } else {
-                                text = text.trim();
-                            }
+                        var bodyText = document.body.innerText || "";
+                        var regex = /```(?:bash|sh|shell|console)?\s*([\s\S]*?)```/g;
+                        var match;
+                        while ((match = regex.exec(bodyText)) !== null) {
+                            codeText = match[1].trim();
+                            hasCode = true;
                         }
                     }
                     
-                    // 3. بررسی وضعیت تولید
-                    var isGenerating = false;
-                    
-                    // اگر کلمه Thinking یا در حال فکر کردن در صفحه بود
                     var bodyText = document.body.innerText || "";
                     if (bodyText.includes("Thinking...") || bodyText.includes("Thought for") || bodyText.includes("در حال فکر کردن")) {
                         isGenerating = true;
                     }
-                    
-                    // اگر متن با نشانگرهای پایانی همراه بود
-                    if (text.endsWith("●") || text.endsWith("▍") || text.endsWith("_")) {
+                    if (bodyText.endsWith("●") || bodyText.endsWith("▍") || bodyText.endsWith("_")) {
                         isGenerating = true;
                     }
                     
-                    var b64 = btoa(unescape(encodeURIComponent(text)));
-                    return JSON.stringify({ text: b64, isGenerating: isGenerating, hasCode: hasCode });
+                    // ✅ ارسال کد به کاتلین از طریق فایل (بدون محدودیت طول)
+                    if (hasCode && !isGenerating) {
+                        AndroidBridge.saveAgentCode(codeText);
+                    }
+                    
+                    return JSON.stringify({ isGenerating: isGenerating, hasCode: hasCode });
                 } catch(e) {
-                    return JSON.stringify({ text: "", isGenerating: false, hasCode: false, jsError: String(e) });
+                    return JSON.stringify({ isGenerating: false, hasCode: false, jsError: String(e) });
                 }
             })();
         """.trimIndent()
@@ -336,7 +330,6 @@ class AgentActivity : Activity() {
             try {
                 val jsonObj = org.json.JSONObject(cleanJson)
                 val hasCode = jsonObj.getBoolean("hasCode")
-                val base64Text = jsonObj.getString("text")
                 val isGenerating = jsonObj.getBoolean("isGenerating")
                 val jsError = jsonObj.optString("jsError", "")
                 
@@ -344,79 +337,35 @@ class AgentActivity : Activity() {
                     Logger.e("Agent", "JS error during polling: $jsError")
                 }
                 
-                val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
-                val text = String(decodedBytes, Charsets.UTF_8).trim()
-                
                 // اگر در حال تولید است، تایمر خالی بودن را ریست می‌کنیم
                 if (isGenerating) {
                     emptyAttempts = 0
-                    lastAiText = ""
-                    stableCounter = 0
                     handler.postDelayed({ checkAiResponse() }, 1000)
                     return@evaluateJavascript
                 }
                 
-                if (text.isEmpty()) {
-                    emptyAttempts++
-                    // به جای ۳۰ ثانیه، ۱۲۰ ثانیه فرصت می‌دهیم
-                    if (emptyAttempts > 120) { 
-                        Logger.e("Agent", "No AI response text detected after $emptyAttempts attempts.")
-                        log("❌ Error: DeepSeek did not respond. Please check your login, network and try again.")
-                        isRunning = false
+                // ✅ اگر کد پیدا شد، آن را از فایل می‌خوانیم
+                if (hasCode && agentCodeFile.exists()) {
+                    val command = agentCodeFile.readText().trim()
+                    agentCodeFile.delete()
+                    
+                    if (command.isNotEmpty()) {
+                        log("📥 AI response received.")
+                        aiCheckAttempts = 0
+                        emptyAttempts = 0
+                        processAiResponse(command)
                         return@evaluateJavascript
                     }
-                    handler.postDelayed({ checkAiResponse() }, 1000)
-                    return@evaluateJavascript
-                } else {
-                    emptyAttempts = 0
                 }
                 
-                // اگر پاسخی بدون کد داده شد، تذکر می‌دهیم
-                if (!hasCode) {
-                    if (text == lastAiText) {
-                        stableCounter++
-                        if (stableCounter >= 2) {
-                            Logger.w("Agent", "AI replied without code: $text")
-                            log("⚠️ AI replied without a bash block.")
-                            stableCounter = 0
-                            lastAiText = ""
-                            sendToAI("[FORMAT ERROR] Reply with ONLY a valid bash code block. No explanations. Try again.")
-                            handler.postDelayed({ checkAiResponse() }, 3000)
-                            return@evaluateJavascript
-                        }
-                    } else {
-                        stableCounter = 0
-                        lastAiText = text
-                    }
-                    handler.postDelayed({ checkAiResponse() }, 1000)
+                emptyAttempts++
+                if (emptyAttempts > 90) { // ۹۰ ثانیه فرصت
+                    Logger.e("Agent", "No AI response text detected after $emptyAttempts attempts.")
+                    log("❌ Error: DeepSeek did not respond. Please check your login, network and try again.")
+                    isRunning = false
                     return@evaluateJavascript
                 }
                 
-                // اگر کد پیدا شد و پایدار است، اجرا می‌کنیم
-                if (text == lastAiText) {
-                    stableCounter++
-                    if (stableCounter >= 2) {
-                        Logger.i("Agent", "Stable code found. Length: ${text.length}")
-                        
-                        var command = text
-                        if (command.startsWith("```")) {
-                            command = command.substringAfter("\n").substringBefore("```")
-                        }
-                        command = command.trim()
-                        
-                        if (command.isNotEmpty()) {
-                            log("📥 AI response received.")
-                            stableCounter = 0
-                            lastAiText = ""
-                            aiCheckAttempts = 0
-                            processAiResponse(command)
-                            return@evaluateJavascript
-                        }
-                    }
-                } else {
-                    stableCounter = 0
-                    lastAiText = text
-                }
             } catch (e: Exception) {
                 Logger.e("Agent", "JSON parse error: ${e.message}")
             }

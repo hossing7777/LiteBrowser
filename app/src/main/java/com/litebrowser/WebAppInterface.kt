@@ -48,4 +48,15 @@ class WebAppInterface(private val context: Context, private val webView: WebView
         Logger.e("Agent", "JS Error: $error")
         Toast.makeText(context, "Agent Error: $error", Toast.LENGTH_LONG).show()
     }
+
+    // ✅ متد جدید برای ذخیره کد استخراج شده در فایل
+    @JavascriptInterface
+    fun saveAgentCode(text: String) {
+        try {
+            val f = File(context.filesDir, "home/agent_code.txt")
+            f.writeText(text)
+        } catch (e: Exception) {
+            Logger.e("WebAppInterface", "Failed to save agent code", e)
+        }
+    }
 }
