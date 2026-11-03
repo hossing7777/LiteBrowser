@@ -249,17 +249,18 @@ class AgentActivity : Activity() {
     private var lastAiText = ""
     private var stableCounter = 0
     private var aiCheckAttempts = 0
+    private var emptyAttempts = 0
 
     private fun checkAiResponse() {
         if (!isRunning) return
         
         aiCheckAttempts++
         if (aiCheckAttempts % 5 == 0) {
-            Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts")
+            Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts, emptyAttempts=$emptyAttempts")
         }
-        if (aiCheckAttempts > 300) {
-            Logger.e("Agent", "Timeout waiting for AI response.")
-            log("❌ Error: Timeout waiting for AI response.")
+        if (aiCheckAttempts > 120) { // ~2 دقیقه تایم‌اوت کلی
+            Logger.e("Agent", "Total timeout waiting for AI response.")
+            log("❌ Error: Total timeout waiting for AI response.")
             isRunning = false
             return
         }
@@ -267,31 +268,41 @@ class AgentActivity : Activity() {
         val js = """
             (function() {
                 try {
-                    var preBlocks = document.querySelectorAll('pre');
                     var text = "";
                     var hasCode = false;
                     
-                    if (preBlocks.length > 0) {
-                        var lastPre = preBlocks[preBlocks.length - 1];
-                        text = lastPre.innerText || lastPre.textContent || "";
-                        text = text.replace(/Copy/g, "").trim();
-                        hasCode = true;
-                    } else {
-                        var markdowns = document.querySelectorAll('.ds-markdown');
-                        if (markdowns.length > 0) {
-                            var lastMarkdown = markdowns[markdowns.length - 1];
-                            text = lastMarkdown.innerText || lastMarkdown.textContent || "";
-                            var match = text.match(/```(?:bash)?\s*([\s\S]*?)```/);
+                    // استخراج متن از جدیدترین بلوک مارک‌داون
+                    var mdBlocks = document.querySelectorAll('.ds-markdown');
+                    if (mdBlocks.length > 0) {
+                        var lastMd = mdBlocks[mdBlocks.length - 1];
+                        var pres = lastMd.querySelectorAll('pre');
+                        if (pres.length > 0) {
+                            text = pres[pres.length - 1].innerText || pres[pres.length - 1].textContent || "";
+                            hasCode = true;
+                        } else {
+                            text = lastMd.innerText || lastMd.textContent || "";
+                            var match = text.match(/```(?:bash|sh|shell|console)?\s*([\s\S]*?)```/);
                             if (match) {
                                 text = match[1];
                                 hasCode = true;
-                            } else {
-                                text = text.trim();
                             }
                         }
                     }
                     
-                    var isGenerating = document.querySelector('div[class*="stop"]') !== null || document.querySelector('button[aria-label*="Stop"]') !== null;
+                    // تمیزکاری
+                    text = (text || "").replace(/Copy/g, "").trim();
+                    
+                    // بررسی دقیق وضعیت تولید: فقط دکمه‌های واقعی و قابل مشاهده
+                    var isGenerating = false;
+                    var stopCandidates = document.querySelectorAll('button[aria-label*="Stop"], button[aria-label*="stop"]');
+                    for (var i = 0; i < stopCandidates.length; i++) {
+                        if (stopCandidates[i].offsetWidth > 0 && stopCandidates[i].offsetHeight > 0) {
+                            isGenerating = true;
+                            break;
+                        }
+                    }
+                    
+                    // بررسی نشانگرهای پایانی متن (در حال تولید)
                     if (text.endsWith("●") || text.endsWith("▍")) {
                         isGenerating = true;
                     }
@@ -299,81 +310,106 @@ class AgentActivity : Activity() {
                     var b64 = btoa(unescape(encodeURIComponent(text)));
                     return JSON.stringify({ text: b64, isGenerating: isGenerating, hasCode: hasCode });
                 } catch(e) {
-                    return JSON.stringify({ text: "", isGenerating: true, hasCode: false });
+                    return JSON.stringify({ text: "", isGenerating: false, hasCode: false, jsError: String(e) });
                 }
             })();
         """.trimIndent()
 
         webView.evaluateJavascript(js) { result ->
-            if (result != null && result != "null" && result != "\"\"") {
-                val cleanJson = result.removeSurrounding("\"")
-                    .replace("\\\"", "\"")
-                    .replace("\\\\", "\\")
+            if (result == null || result == "null" || result == "\"\"") {
+                handler.postDelayed({ checkAiResponse() }, 1000)
+                return@evaluateJavascript
+            }
+            
+            val cleanJson = result.removeSurrounding("\"")
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\")
+            
+            try {
+                val jsonObj = org.json.JSONObject(cleanJson)
+                val hasCode = jsonObj.getBoolean("hasCode")
+                val base64Text = jsonObj.getString("text")
+                val isGenerating = jsonObj.getBoolean("isGenerating")
+                val jsError = jsonObj.optString("jsError", "")
                 
-                try {
-                    val jsonObj = org.json.JSONObject(cleanJson)
-                    val hasCode = jsonObj.getBoolean("hasCode")
-                    val base64Text = jsonObj.getString("text")
-                    val isGenerating = jsonObj.getBoolean("isGenerating")
-                    
-                    val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
-                    val text = String(decodedBytes, Charsets.UTF_8).trim()
-                    
-                    if (isGenerating || text.isEmpty()) {
-                        lastAiText = ""
-                        stableCounter = 0
-                        handler.postDelayed({ checkAiResponse() }, 1000)
+                if (jsError.isNotEmpty()) {
+                    Logger.e("Agent", "JS error during polling: $jsError")
+                }
+                
+                val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
+                val text = String(decodedBytes, Charsets.UTF_8).trim()
+                
+                // ردیابی متن خالی
+                if (text.isEmpty()) {
+                    emptyAttempts++
+                    if (emptyAttempts > 15) {
+                        Logger.e("Agent", "No AI response text detected after $emptyAttempts attempts.")
+                        log("❌ Error: DeepSeek did not respond. Please check your login, network and try again.")
+                        isRunning = false
                         return@evaluateJavascript
                     }
-                    
-                    if (!hasCode) {
-                        if (text == lastAiText) {
-                            stableCounter++
-                            if (stableCounter >= 2) {
-                                log("⚠️ AI replied without a bash block. Sending format correction...")
-                                stableCounter = 0
-                                lastAiText = ""
-                                
-                                val correctionPrompt = "[FORMAT ERROR] You must reply with a valid bash code block. Do NOT write any explanations. Try again."
-                                sendToAI(correctionPrompt)
-                                handler.postDelayed({ checkAiResponse() }, 3000)
-                                return@evaluateJavascript
-                            }
-                        } else {
-                            stableCounter = 0
-                            lastAiText = text
-                        }
-                        handler.postDelayed({ checkAiResponse() }, 1000)
-                        return@evaluateJavascript
-                    }
-                    
+                    handler.postDelayed({ checkAiResponse() }, 1000)
+                    return@evaluateJavascript
+                } else {
+                    emptyAttempts = 0
+                }
+                
+                // اگر در حال تولید است، صبر می‌کنیم
+                if (isGenerating) {
+                    lastAiText = ""
+                    stableCounter = 0
+                    handler.postDelayed({ checkAiResponse() }, 1000)
+                    return@evaluateJavascript
+                }
+                
+                // اگر پاسخی بدون کد داده شد، تذکر می‌دهیم
+                if (!hasCode) {
                     if (text == lastAiText) {
                         stableCounter++
                         if (stableCounter >= 2) {
-                            Logger.i("Agent", "Stable code block found. Length: ${text.length}")
-                            
-                            var command = text
-                            if (command.startsWith("```")) {
-                                command = command.substringAfter("\n").substringBefore("```")
-                            }
-                            command = command.trim()
-                            
-                            if (command.isNotEmpty()) {
-                                log("📥 AI response received.")
-                                stableCounter = 0
-                                lastAiText = ""
-                                aiCheckAttempts = 0
-                                processAiResponse(command)
-                                return@evaluateJavascript
-                            }
+                            Logger.w("Agent", "AI replied without code: $text")
+                            log("⚠️ AI replied without a bash block.")
+                            stableCounter = 0
+                            lastAiText = ""
+                            sendToAI("[FORMAT ERROR] Reply with ONLY a valid bash code block. No explanations. Try again.")
+                            handler.postDelayed({ checkAiResponse() }, 3000)
+                            return@evaluateJavascript
                         }
                     } else {
                         stableCounter = 0
                         lastAiText = text
                     }
-                } catch (e: Exception) {
-                    Logger.e("Agent", "JSON parsing failed: ${e.message}")
+                    handler.postDelayed({ checkAiResponse() }, 1000)
+                    return@evaluateJavascript
                 }
+                
+                // اگر کد پیدا شد و پایدار است، اجرا می‌کنیم
+                if (text == lastAiText) {
+                    stableCounter++
+                    if (stableCounter >= 2) {
+                        Logger.i("Agent", "Stable code found. Length: ${text.length}")
+                        
+                        var command = text
+                        if (command.startsWith("```")) {
+                            command = command.substringAfter("\n").substringBefore("```")
+                        }
+                        command = command.trim()
+                        
+                        if (command.isNotEmpty()) {
+                            log("📥 AI response received.")
+                            stableCounter = 0
+                            lastAiText = ""
+                            aiCheckAttempts = 0
+                            processAiResponse(command)
+                            return@evaluateJavascript
+                        }
+                    }
+                } else {
+                    stableCounter = 0
+                    lastAiText = text
+                }
+            } catch (e: Exception) {
+                Logger.e("Agent", "JSON parse error: ${e.message}")
             }
             handler.postDelayed({ checkAiResponse() }, 1000)
         }
@@ -390,8 +426,8 @@ class AgentActivity : Activity() {
             .trim()
 
         if (filteredCommand.isEmpty() || filteredCommand.contains("You are an Alpine Linux terminal bot")) {
-            log("⚠️ AI echoed the instructions instead of a command. Retrying...")
-            sendToAI("[FORMAT ERROR] Output ONLY the bash command. Do NOT repeat the instructions.")
+            log("⚠️ AI echoed instructions. Retrying...")
+            sendToAI("[FORMAT ERROR] Output ONLY the bash command.")
             handler.postDelayed({ checkAiResponse() }, 3000)
             return
         }
@@ -404,12 +440,11 @@ class AgentActivity : Activity() {
             val execCmd = "($filteredCommand) > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
             session.write(execCmd)
             Logger.i("Agent", "Command sent to terminal.")
-            log("⏳ Executing command in terminal...")
+            log("⏳ Executing...")
             handler.postDelayed({ readTerminalOutput() }, 1500)
         } else {
-            val err = "No active terminal session. Please open terminal first."
-            Logger.e("Agent", err)
-            log("❌ Error: $err")
+            Logger.e("Agent", "No active terminal session.")
+            log("❌ Error: No terminal session.")
             isRunning = false
         }
     }
@@ -419,7 +454,7 @@ class AgentActivity : Activity() {
         
         cmdCheckAttempts++
         if (cmdCheckAttempts > 60) {
-            Logger.e("Agent", "Timeout waiting for command execution.")
+            Logger.e("Agent", "Command execution timeout.")
             log("❌ Error: Command execution timed out.")
             isRunning = false
             return
