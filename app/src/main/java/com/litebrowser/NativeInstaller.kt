@@ -52,8 +52,8 @@ object NativeInstaller {
                 REQ_FILE="/root/ai_req.txt"
                 RES_FILE="/root/ai_res.txt"
                 
-                # ارسال درخواست با Base64
-                echo -n "${'$'}*" | base64 > "${'$'}REQ_FILE"
+                # ✅ حذف کاراکتر Newline از خروجی Base64
+                echo -n "${'$'}*" | base64 | tr -d '\n' > "${'$'}REQ_FILE"
                 
                 echo -e "\033[33mWaiting for AI... (Switch to browser if it's not open)\033[0m" >&2
                 
@@ -61,7 +61,8 @@ object NativeInstaller {
                 while [ ! -f "${'$'}RES_FILE" ]; do
                     sleep 0.5
                     count=${'$'}((count+1))
-                    if [ ${'$'}count -ge 360 ]; then
+                    # تایم‌اوت ۵ دقیقه (600 * 0.5)
+                    if [ ${'$'}count -ge 600 ]; then
                         echo -e "\033[31mError: Timeout waiting for AI response\033[0m" >&2
                         rm -f "${'$'}REQ_FILE"
                         exit 1
@@ -69,7 +70,6 @@ object NativeInstaller {
                 done
                 
                 echo -e "\033[32mAI:\033[0m"
-                # دریافت پاسخ با Base64
                 base64 -d "${'$'}RES_FILE"
                 echo ""
                 rm -f "${'$'}REQ_FILE" "${'$'}RES_FILE"

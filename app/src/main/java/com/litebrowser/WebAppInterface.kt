@@ -5,7 +5,6 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.widget.Toast
 import java.io.File
-import java.util.Base64
 
 class WebAppInterface(private val context: Context, private val webView: WebView) {
 
@@ -36,8 +35,8 @@ class WebAppInterface(private val context: Context, private val webView: WebView
     fun onAiResponse(text: String) {
         try {
             val resFile = File(context.filesDir, "home/ai_res.txt")
-            // ✅ تبدیل پاسخ به Base64 برای جلوگیری از خرابی کاراکترها
-            val base64Text = Base64.getEncoder().encodeToString(text.toByteArray(Charsets.UTF_8))
+            // ✅ استفاده از android.util.Base64
+            val base64Text = android.util.Base64.encodeToString(text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
             resFile.writeText(base64Text)
         } catch (e: Exception) {
             Logger.e("WebAppInterface", "Failed to write AI response", e)
@@ -48,7 +47,7 @@ class WebAppInterface(private val context: Context, private val webView: WebView
     fun onAiError(error: String) {
         try {
             val resFile = File(context.filesDir, "home/ai_res.txt")
-            val base64Text = Base64.getEncoder().encodeToString("Error: $error".toByteArray(Charsets.UTF_8))
+            val base64Text = android.util.Base64.encodeToString("Error: $error".toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
             resFile.writeText(base64Text)
         } catch (e: Exception) {
             Logger.e("WebAppInterface", "Failed to write AI error", e)

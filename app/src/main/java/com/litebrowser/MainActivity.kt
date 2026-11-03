@@ -17,7 +17,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import java.io.File
-import java.util.Base64
 
 class MainActivity : Activity() {
 
@@ -75,11 +74,13 @@ class MainActivity : Activity() {
         Thread {
             while (isAiWatcherRunning) {
                 if (reqFile.exists()) {
-                    val base64Prompt = reqFile.readText()
+                    // ✅ حذف کاراکترهای اضافی (Newline) قبل از دیکد کردن
+                    val base64Prompt = reqFile.readText().trim()
                     val prompt = try {
-                        String(Base64.getDecoder().decode(base64Prompt))
+                        // ✅ استفاده از android.util.Base64 برای سازگاری بیشتر
+                        String(android.util.Base64.decode(base64Prompt, android.util.Base64.NO_WRAP))
                     } catch (e: Exception) {
-                        base64Prompt // Fallback
+                        base64Prompt
                     }
                     reqFile.delete()
                     runOnUiThread {
@@ -96,6 +97,7 @@ class MainActivity : Activity() {
     }
 
     private fun executeAiPrompt(prompt: String) {
+        // پاکسازی کاراکترهای خاص برای جلوگیری از خطای سینتکس در جاوااسکریپت
         val safePrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
         
         val js = """
@@ -133,9 +135,7 @@ class MainActivity : Activity() {
                         attempts++;
                         var msgs = document.querySelectorAll('.ds-markdown');
                         if (msgs.length > 0) {
-                            // ایجاد یک کپی از آخرین پیام برای دستکاری آن
                             var clone = msgs[msgs.length - 1].cloneNode(true);
-                            // حذف دکمه‌های Copy و Download و آیکون‌ها از متن
                             var btns = clone.querySelectorAll('button, .ds-icon-button');
                             for(var j=0; j<btns.length; j++) { btns[j].remove(); }
                             
@@ -151,8 +151,8 @@ class MainActivity : Activity() {
                                 lastText = currentText;
                             }
                         }
-                        // افزایش تایم‌اوت به ۱۸۰ ثانیه (360 * 0.5)
-                        if (attempts > 360) { 
+                        // افزایش تایم‌اوت به ۵ دقیقه (600 * 0.5)
+                        if (attempts > 600) { 
                             clearInterval(interval);
                             AndroidBridge.onAiError("Timeout waiting for AI response");
                         }
