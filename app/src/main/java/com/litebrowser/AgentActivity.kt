@@ -43,11 +43,8 @@ class AgentActivity : Activity() {
         webView = findViewById(R.id.agent_webview)
         progressBar = findViewById(R.id.agent_progress)
 
-        // ✅ به تعویق انداختن راه‌اندازی وب‌ویو تا UI اصلی لود شود و برنامه هنگ نکند
         handler.postDelayed({
-            Logger.i("Agent", "Setting up WebView")
             setupWebView()
-            Logger.i("Agent", "Loading DeepSeek URL")
             webView.loadUrl("https://chat.deepseek.com/")
         }, 800)
 
@@ -67,7 +64,6 @@ class AgentActivity : Activity() {
                 Toast.makeText(this, "لطفا یک درخواست وارد کنید", Toast.LENGTH_SHORT).show()
             }
         }
-        Logger.i("Agent", "AgentActivity onCreate finished")
     }
 
     private fun setupWebView() {
@@ -250,7 +246,6 @@ class AgentActivity : Activity() {
     private fun readTerminalOutput(previousAiText: String) {
         if (!isRunning) return
 
-        // ✅ خواندن فایل در ترد پس‌زمینه برای جلوگیری از هنگ کردن UI
         thread {
             if (outFile.exists()) {
                 val content = outFile.readText()

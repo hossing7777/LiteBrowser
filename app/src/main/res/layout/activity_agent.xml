@@ -53,10 +53,23 @@
             android:text="Agent is ready..." />
     </ScrollView>
 
-    <!-- ✅ وب‌ویو به اینجا منتقل شد تا در صورت نیاز لاگین کنید -->
-    <WebView
-        android:id="@+id/agent_webview"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="180dp"
-        android:background="#EEEEEE" />
+        android:layout_height="200dp"
+        android:background="#DDDDDD"
+        android:padding="2dp">
+        
+        <WebView
+            android:id="@+id/agent_webview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#FFFFFF" />
+            
+        <ProgressBar
+            android:id="@+id/agent_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </FrameLayout>
 </LinearLayout>
