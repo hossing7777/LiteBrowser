@@ -30,6 +30,9 @@ class AgentActivity : Activity() {
     private var isPageLoaded = false
     private val logBuilder = StringBuilder()
 
+    // فایل بافر برای کدهای سنگین
+    private val agentCodeFile by lazy { File(filesDir, "home/agent_code.txt") }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Logger.i("Agent", "AgentActivity onCreate started")
@@ -221,13 +224,13 @@ class AgentActivity : Activity() {
     }
 
     private var aiCheckAttempts = 0
-    private var emptyAttempts = 0
 
     private fun checkAiResponse() {
         if (!isRunning) return
         aiCheckAttempts++
         
-        if (aiCheckAttempts > 180) {
+        // ✅ افزایش تایم‌اوت به ۵ دقیقه (۳۰۰ ثانیه) برای پاسخ‌های سنگین
+        if (aiCheckAttempts > 300) {
             log("❌ Error: Total timeout waiting for AI response.")
             Logger.e("Agent", "Total timeout waiting for AI response.")
             isRunning = false
@@ -238,37 +241,55 @@ class AgentActivity : Activity() {
             (function() {
                 try {
                     window.scrollTo(0, document.body.scrollHeight);
+                    
+                    var markdowns = document.querySelectorAll('.ds-markdown');
+                    if (markdowns.length === 0) {
+                        return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false });
+                    }
+                    
+                    var lastMd = markdowns[markdowns.length - 1];
+                    
+                    if (lastMd.getAttribute('data-processed') === 'true') {
+                         return JSON.stringify({ isGenerating: false, hasCode: false, taskComplete: false, alreadyProcessed: true });
+                    }
+
+                    var text = lastMd.innerText || lastMd.textContent || "";
+                    
+                    if (text.includes("TASK_COMPLETE")) {
+                        lastMd.setAttribute('data-processed', 'true');
+                        return JSON.stringify({ isGenerating: false, hasCode: false, taskComplete: true, alreadyProcessed: false });
+                    }
+
                     var codeText = "";
                     var hasCode = false;
-                    var taskComplete = false;
-                    
-                    // فقط بلوک‌های کدی را بگیر که قبلا پردازش نشده‌اند
-                    var pres = document.querySelectorAll('pre:not([data-processed])');
-                    if (pres.length > 0) {
-                        var lastPre = pres[pres.length - 1];
-                        codeText = lastPre.innerText || lastPre.textContent || "";
-                        codeText = codeText.replace(/^Copy\s*\n?/i, "").replace(/^bash\s*\n?/i, "").replace(/^sh\s*\n?/i, "").trim();
+                    var pre = lastMd.querySelector('pre');
+                    if (pre) {
+                        codeText = pre.innerText || pre.textContent || "";
+                        codeText = codeText.replace(/^Copy\s*\n?/i, "").replace(/^Download\s*\n?/i, "").replace(/^bash\s*\n?/i, "").trim();
                         hasCode = true;
-                        lastPre.setAttribute('data-processed', 'true'); // علامت‌گذاری به عنوان پردازش شده
                     } else {
-                        // اگر کد نبود، چک کن آیا پیام TASK_COMPLETE داده شده؟
-                        var bodyText = document.body.innerText || "";
-                        // بررسی ۱۰۰ کاراکتر آخر صفحه
-                        var lastText = bodyText.trim().slice(-100);
-                        if (lastText.includes("TASK_COMPLETE")) {
-                            taskComplete = true;
+                        var match = text.match(/```(?:bash|sh|shell)?\s*([\s\S]*?)```/);
+                        if (match) {
+                            codeText = match[1].trim();
+                            hasCode = true;
                         }
                     }
-                    
+
                     var isGenerating = false;
-                    if (bodyText.includes("Thinking...") || bodyText.includes("Thought for")) {
+                    if (text.endsWith("●") || text.endsWith("▍") || text.endsWith("_")) {
                         isGenerating = true;
                     }
-                    
-                    var b64 = btoa(unescape(encodeURIComponent(codeText)));
-                    return JSON.stringify({ text: b64, isGenerating: isGenerating, hasCode: hasCode, taskComplete: taskComplete });
+
+                    // ✅ ارسال کد به فایل بافر در اندروید (بدون محدودیت طول)
+                    if (hasCode && !isGenerating) {
+                        lastMd.setAttribute('data-processed', 'true');
+                        AndroidBridge.saveAgentCode(codeText);
+                    }
+
+                    return JSON.stringify({ isGenerating: isGenerating, hasCode: hasCode, taskComplete: false, alreadyProcessed: false });
+
                 } catch(e) {
-                    return JSON.stringify({ text: "", isGenerating: true, hasCode: false, taskComplete: false });
+                    return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, jsError: String(e) });
                 }
             })();
         """.trimIndent()
@@ -286,9 +307,9 @@ class AgentActivity : Activity() {
             try {
                 val jsonObj = org.json.JSONObject(cleanJson)
                 val hasCode = jsonObj.getBoolean("hasCode")
-                val base64Text = jsonObj.getString("text")
                 val isGenerating = jsonObj.getBoolean("isGenerating")
                 val taskComplete = jsonObj.optBoolean("taskComplete", false)
+                val alreadyProcessed = jsonObj.optBoolean("alreadyProcessed", false)
                 
                 if (taskComplete) {
                     log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.")
@@ -297,32 +318,28 @@ class AgentActivity : Activity() {
                     return@evaluateJavascript
                 }
 
-                val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
-                val text = String(decodedBytes, Charsets.UTF_8).trim()
-                
-                if (isGenerating) {
-                    emptyAttempts = 0
+                if (alreadyProcessed) {
+                    handler.postDelayed({ checkAiResponse() }, 1000)
+                    return@evaluateJavascript
+                }
+
+                if (!hasCode || isGenerating) {
                     handler.postDelayed({ checkAiResponse() }, 1000)
                     return@evaluateJavascript
                 }
                 
-                if (!hasCode || text.isEmpty()) {
-                    emptyAttempts++
-                    if (emptyAttempts > 60) { 
-                        log("❌ Error: DeepSeek did not respond with code.")
-                        Logger.e("Agent", "DeepSeek did not respond with code.")
-                        isRunning = false
-                        return@evaluateJavascript
+                // ✅ خواندن کد از فایل بافر
+                if (agentCodeFile.exists()) {
+                    val text = agentCodeFile.readText().trim()
+                    agentCodeFile.delete() // پاک کردن فایل برای پاسخ بعدی
+                    
+                    if (text.isNotEmpty()) {
+                        log("📥 AI response received. (${text.length} chars)")
+                        Logger.i("Agent", "AI Code received from buffer file: ${text.take(50)}...")
+                        aiCheckAttempts = 0
+                        processAiResponse(text)
                     }
-                    handler.postDelayed({ checkAiResponse() }, 1000)
-                    return@evaluateJavascript
                 }
-                
-                log("📥 AI response received.")
-                Logger.i("Agent", "AI Code received: ${text.take(50)}...")
-                aiCheckAttempts = 0
-                emptyAttempts = 0
-                processAiResponse(text)
                 
             } catch (e: Exception) {
                 Logger.e("Agent", "JSON parse error: ${e.message}")
@@ -332,12 +349,6 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(command: String) {
-        if (command.contains("TASK_COMPLETE")) {
-            log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.")
-            isRunning = false
-            return
-        }
-
         log("\n💻 Running Command:\n$command\n")
         
         val session = TerminalManager.sessions.firstOrNull()
@@ -363,7 +374,8 @@ class AgentActivity : Activity() {
     private fun readTerminalOutput(startMarker: String, endMarker: String, attempts: Int) {
         if (!isRunning) return
         
-        if (attempts > 30) { 
+        // ✅ افزایش زمان انتظار دستورات ترمینال به ۵ دقیقه (۳۰۰ ثانیه)
+        if (attempts > 300) { 
             log("❌ Error: Command execution timed out.")
             isRunning = false
             return
@@ -386,8 +398,9 @@ class AgentActivity : Activity() {
             output = output.lines().filterNot { it.contains("sh /root/run_agent.sh") || it.contains("echo \"___AGENT") }.joinToString("\n").trim()
             if (output.isEmpty()) output = "Command executed successfully (no output)."
 
-            if (output.length > 1500) {
-                output = output.take(1500) + "\n... (output truncated)"
+            // ✅ افزایش حجم خروجی ارسالی به هوش مصنوعی از ۱۵۰۰ به ۵۰۰۰ کاراکتر
+            if (output.length > 5000) {
+                output = output.take(5000) + "\n... (output truncated due to size)"
             }
 
             log("\n📄 Output:\n$output\n")
