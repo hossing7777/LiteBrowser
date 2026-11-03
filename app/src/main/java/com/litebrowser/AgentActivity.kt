@@ -35,8 +35,7 @@ class AgentActivity : Activity() {
         super.onCreate(savedInstanceState)
         Logger.i("Agent", "AgentActivity onCreate started")
         setContentView(R.layout.activity_agent)
-        Logger.i("Agent", "Layout inflated")
-
+        
         etPrompt = findViewById(R.id.et_agent_prompt)
         btnStart = findViewById(R.id.btn_agent_start)
         tvLog = findViewById(R.id.tv_agent_log)
@@ -44,7 +43,9 @@ class AgentActivity : Activity() {
         progressBar = findViewById(R.id.agent_progress)
 
         handler.postDelayed({
+            Logger.i("Agent", "Setting up WebView")
             setupWebView()
+            Logger.i("Agent", "Loading DeepSeek URL")
             webView.loadUrl("https://chat.deepseek.com/")
         }, 800)
 
@@ -59,11 +60,20 @@ class AgentActivity : Activity() {
             }
             val prompt = etPrompt.text.toString().trim()
             if (prompt.isNotEmpty()) {
+                // ✅ چک کردن اینکه آیا ترمینال باز است یا خیر
+                if (TerminalManager.sessions.isEmpty() || TerminalManager.sessions.firstOrNull()?.isRunning == false) {
+                    val msg = "لطفاً ابتدا به بخش ترمینال بروید و یک جلسه باز کنید!"
+                    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    Logger.e("Agent", msg)
+                    log("❌ $msg")
+                    return@setOnClickListener
+                }
                 startAgent(prompt)
             } else {
                 Toast.makeText(this, "لطفا یک درخواست وارد کنید", Toast.LENGTH_SHORT).show()
             }
         }
+        Logger.i("Agent", "AgentActivity onCreate finished")
     }
 
     private fun setupWebView() {
@@ -81,12 +91,14 @@ class AgentActivity : Activity() {
                     super.onPageStarted(view, url, favicon)
                     runOnUiThread { progressBar.visibility = View.VISIBLE }
                     isPageLoaded = false
+                    Logger.i("Agent", "WebView loading started: $url")
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     runOnUiThread { progressBar.visibility = View.GONE }
                     isPageLoaded = true
+                    Logger.i("Agent", "WebView loading finished: $url")
                     log("✅ DeepSeek page loaded. Ready to start.")
                 }
             }
@@ -110,6 +122,7 @@ class AgentActivity : Activity() {
         isRunning = true
         logBuilder.clear()
         log("🤖 Starting Agent with task: $prompt\n")
+        Logger.i("Agent", "startAgent called with prompt: $prompt")
 
         val systemPrompt = """
             You are an AI autonomous agent operating inside an Alpine Linux terminal.
@@ -135,6 +148,7 @@ class AgentActivity : Activity() {
     }
 
     private fun sendToAI(text: String) {
+        Logger.i("Agent", "sendToAI called. Length: ${text.length}")
         val safePrompt = text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
         
         val js = """
@@ -167,6 +181,7 @@ class AgentActivity : Activity() {
         """.trimIndent()
         
         webView.evaluateJavascript(js, null)
+        Logger.i("Agent", "JavaScript injected to send message.")
     }
 
     private var lastAiText = ""
@@ -201,14 +216,17 @@ class AgentActivity : Activity() {
                 if (cleanText.isNotEmpty() && cleanText != "TASK_COMPLETE") {
                     if (cleanText.length > 10) {
                         if (isResponseStable(cleanText)) {
+                            Logger.i("Agent", "Stable AI response found. Length: ${cleanText.length}")
                             processAiResponse(cleanText)
                         } else {
+                            Logger.d("Agent", "Checking AI response... (waiting for stable text)")
                             handler.postDelayed({ checkAiResponse() }, 1000)
                         }
                     } else {
                         handler.postDelayed({ checkAiResponse() }, 1000)
                     }
                 } else if (cleanText == "TASK_COMPLETE") {
+                    Logger.i("Agent", "TASK_COMPLETE received.")
                     log("\n✅ Agent finished the task!")
                     isRunning = false
                 } else {
@@ -221,23 +239,29 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(aiText: String) {
+        Logger.i("Agent", "Processing AI response: ${aiText.take(100)}...")
         val regex = Regex("```(?:bash|sh)?\\n([\\s\\S]*?)```")
         val match = regex.find(aiText)
         
         if (match != null) {
             val command = match.groupValues[1].trim()
             log("\n💻 Running Command:\n$command\n")
+            Logger.i("Agent", "Extracted command: $command")
             
             val session = TerminalManager.sessions.firstOrNull()
             if (session != null && session.isRunning) {
                 val execCmd = "$command > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
                 session.write(execCmd)
+                Logger.i("Agent", "Command sent to terminal.")
                 handler.postDelayed({ readTerminalOutput(aiText) }, 1500)
             } else {
-                log("❌ Error: No active terminal session. Please open terminal first.")
+                val err = "No active terminal session. Please open terminal first."
+                Logger.e("Agent", err)
+                log("❌ Error: $err")
                 isRunning = false
             }
         } else {
+            Logger.w("Agent", "No valid bash code block found in AI response.")
             log("⚠️ AI did not return a valid command block. Retrying...")
             handler.postDelayed({ checkAiResponse() }, 2000)
         }
@@ -251,6 +275,7 @@ class AgentActivity : Activity() {
                 val content = outFile.readText()
                 if (content.contains("##DONE##")) {
                     val output = content.replace("##DONE##", "").trim()
+                    Logger.i("Agent", "Command output: $output")
                     log("\n📄 Output:\n$output\n")
                     outFile.delete() 
                     
@@ -269,6 +294,7 @@ class AgentActivity : Activity() {
     override fun onDestroy() {
         isRunning = false
         handler.removeCallbacksAndMessages(null)
+        Logger.i("Agent", "AgentActivity onDestroy")
         super.onDestroy()
     }
 }
