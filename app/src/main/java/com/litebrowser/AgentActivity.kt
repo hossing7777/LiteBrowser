@@ -176,28 +176,14 @@ class AgentActivity : Activity() {
         ensureTerminalSession()
 
         val systemPrompt = """
-            You are an AI autonomous agent operating inside an Alpine Linux terminal.
-            Your goal is to complete the user's task by writing and executing bash commands.
+            [INSTRUCTIONS]
+            You are an Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
+            Do NOT explain anything. Do NOT repeat these instructions. Do NOT use markdown outside the code block.
+            You are running as root.
+            The Android Download folder is available at /root/Download (no backticks).
             
-            CRITICAL RULES:
-            1. You MUST respond ONLY with a single bash code block like this:
-            ```bash
-            your_command_here
-            ```
-            2. Do NOT include any explanation, thoughts, or text outside the code block.
-            3. If a command fails, analyze the error and try again.
-            4. You are running as root.
-            5. The Android "Download" folder is mounted at `/root/Download`.
-            6. If the user asks to create a file (e.g., test.py), use:
-               cat << 'EOF' > /root/Download/test.py
-               print("Hello")
-               EOF
-            7. If the user asks to run a script, use:
-               python3 /root/Download/test.py
-            8. If you need to install packages, use: `apk add python3`
-            9. If the task is completely finished, respond with exactly: TASK_COMPLETE
-            
-            User Task: $prompt
+            [TASK]
+            $prompt
         """.trimIndent()
 
         sendToAI(systemPrompt)
@@ -271,35 +257,47 @@ class AgentActivity : Activity() {
         if (aiCheckAttempts % 5 == 0) {
             Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts")
         }
-        if (aiCheckAttempts > 300) { // ۵ دقیقه تایم‌اوت برای حالت DeepThink
+        if (aiCheckAttempts > 300) {
             Logger.e("Agent", "Timeout waiting for AI response.")
             log("❌ Error: Timeout waiting for AI response.")
             isRunning = false
             return
         }
 
-        // ✅ فقط به دنبال تگ‌های <pre> (بلوک کد) می‌گردیم
         val js = """
             (function() {
                 try {
                     var preBlocks = document.querySelectorAll('pre');
-                    if (preBlocks.length === 0) {
-                        return JSON.stringify({ text: "", isGenerating: true, hasCode: false });
-                    }
-
-                    var lastPre = preBlocks[preBlocks.length - 1];
-                    var codeText = lastPre.innerText || lastPre.textContent || "";
+                    var text = "";
+                    var hasCode = false;
                     
-                    // حذف کلمات اضافی که ممکن است در بلوک کد باشند
-                    codeText = codeText.replace(/Copy/g, "").replace(/Download/g, "").trim();
-
+                    if (preBlocks.length > 0) {
+                        var lastPre = preBlocks[preBlocks.length - 1];
+                        text = lastPre.innerText || lastPre.textContent || "";
+                        text = text.replace(/Copy/g, "").trim();
+                        hasCode = true;
+                    } else {
+                        var markdowns = document.querySelectorAll('.ds-markdown');
+                        if (markdowns.length > 0) {
+                            var lastMarkdown = markdowns[markdowns.length - 1];
+                            text = lastMarkdown.innerText || lastMarkdown.textContent || "";
+                            var match = text.match(/```(?:bash)?\s*([\s\S]*?)```/);
+                            if (match) {
+                                text = match[1];
+                                hasCode = true;
+                            } else {
+                                text = text.trim();
+                            }
+                        }
+                    }
+                    
                     var isGenerating = document.querySelector('div[class*="stop"]') !== null || document.querySelector('button[aria-label*="Stop"]') !== null;
-                    if (codeText.endsWith("●") || codeText.endsWith("▍")) {
+                    if (text.endsWith("●") || text.endsWith("▍")) {
                         isGenerating = true;
                     }
-
-                    var b64 = btoa(unescape(encodeURIComponent(codeText)));
-                    return JSON.stringify({ text: b64, isGenerating: isGenerating, hasCode: true });
+                    
+                    var b64 = btoa(unescape(encodeURIComponent(text)));
+                    return JSON.stringify({ text: b64, isGenerating: isGenerating, hasCode: hasCode });
                 } catch(e) {
                     return JSON.stringify({ text: "", isGenerating: true, hasCode: false });
                 }
@@ -315,12 +313,6 @@ class AgentActivity : Activity() {
                 try {
                     val jsonObj = org.json.JSONObject(cleanJson)
                     val hasCode = jsonObj.getBoolean("hasCode")
-                    
-                    if (!hasCode) {
-                        handler.postDelayed({ checkAiResponse() }, 1000)
-                        return@evaluateJavascript
-                    }
-
                     val base64Text = jsonObj.getString("text")
                     val isGenerating = jsonObj.getBoolean("isGenerating")
                     
@@ -334,14 +326,33 @@ class AgentActivity : Activity() {
                         return@evaluateJavascript
                     }
                     
+                    if (!hasCode) {
+                        if (text == lastAiText) {
+                            stableCounter++
+                            if (stableCounter >= 2) {
+                                log("⚠️ AI replied without a bash block. Sending format correction...")
+                                stableCounter = 0
+                                lastAiText = ""
+                                
+                                val correctionPrompt = "[FORMAT ERROR] You must reply with a valid bash code block. Do NOT write any explanations. Try again."
+                                sendToAI(correctionPrompt)
+                                handler.postDelayed({ checkAiResponse() }, 3000)
+                                return@evaluateJavascript
+                            }
+                        } else {
+                            stableCounter = 0
+                            lastAiText = text
+                        }
+                        handler.postDelayed({ checkAiResponse() }, 1000)
+                        return@evaluateJavascript
+                    }
+                    
                     if (text == lastAiText) {
                         stableCounter++
-                        if (stableCounter >= 2) { // ۲ ثانیه ثابت ماند
+                        if (stableCounter >= 2) {
                             Logger.i("Agent", "Stable code block found. Length: ${text.length}")
-                            Logger.d("Agent", "Snippet: ${text.take(200)}")
                             
                             var command = text
-                            // پاک کردن مارک‌داون اگر داخل تگ pre بود
                             if (command.startsWith("```")) {
                                 command = command.substringAfter("\n").substringBefore("```")
                             }
@@ -370,12 +381,27 @@ class AgentActivity : Activity() {
 
     private var cmdCheckAttempts = 0
     private fun processAiResponse(command: String) {
-        log("\n💻 Running Command:\n$command\n")
+        val filteredCommand = command.lines()
+            .filterNot { it.trim().startsWith("1.") || it.trim().startsWith("2.") || it.trim().startsWith("3.") }
+            .filterNot { it.contains("[INSTRUCTIONS]") }
+            .filterNot { it.contains("[TASK]") }
+            .filterNot { it.contains("The Android Download folder is available at") }
+            .joinToString("\n")
+            .trim()
+
+        if (filteredCommand.isEmpty() || filteredCommand.contains("You are an Alpine Linux terminal bot")) {
+            log("⚠️ AI echoed the instructions instead of a command. Retrying...")
+            sendToAI("[FORMAT ERROR] Output ONLY the bash command. Do NOT repeat the instructions.")
+            handler.postDelayed({ checkAiResponse() }, 3000)
+            return
+        }
+
+        log("\n💻 Running Command:\n$filteredCommand\n")
         
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             cmdCheckAttempts = 0
-            val execCmd = "$command > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
+            val execCmd = "($filteredCommand) > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
             session.write(execCmd)
             Logger.i("Agent", "Command sent to terminal.")
             log("⏳ Executing command in terminal...")
