@@ -268,6 +268,9 @@ class AgentActivity : Activity() {
         if (!isRunning) return
         
         aiCheckAttempts++
+        if (aiCheckAttempts % 5 == 0) {
+            Logger.i("Agent", "Polling AI... attempt $aiCheckAttempts")
+        }
         if (aiCheckAttempts > 180) { // ۳ دقیقه تایم‌اوت
             Logger.e("Agent", "Timeout waiting for AI response.")
             log("❌ Error: Timeout waiting for AI response.")
@@ -275,33 +278,23 @@ class AgentActivity : Activity() {
             return
         }
 
-        // ✅ فقط المان‌های پاسخ هوش مصنوعی (کلاس ds-markdown) را می‌خوانیم
+        // ✅ استخراج به روش Brute-force: خواندن کل متن و پیدا کردن آخرین بلوک کد
         val js = """
             (function() {
-                var msgs = document.querySelectorAll('.ds-markdown');
-                if (msgs.length === 0) {
-                    msgs = document.querySelectorAll('div[class*="markdown"]');
-                }
-                
-                if (msgs.length === 0) {
+                try {
+                    var clones = document.body.cloneNode(true);
+                    var toRemove = clones.querySelectorAll('textarea, input, header, nav, footer, .ds-icon-button, button, svg');
+                    for(var i=0; i<toRemove.length; i++) { toRemove[i].remove(); }
+                    var text = clones.innerText;
+                    
+                    // چک کردن اینکه آیا دکمه Stop (در حال تایپ) وجود دارد
+                    var isGenerating = document.querySelector('button[aria-label*="Stop"], [class*="stop-button"]') !== null;
+                    
+                    var b64 = btoa(unescape(encodeURIComponent(text)));
+                    return JSON.stringify({ text: b64, isGenerating: isGenerating });
+                } catch(e) {
                     return JSON.stringify({ text: "", isGenerating: true });
                 }
-
-                var lastMsg = msgs[msgs.length - 1];
-                var clone = lastMsg.cloneNode(true);
-                var btns = clone.querySelectorAll('button, .ds-icon-button, svg');
-                for(var j=0; j<btns.length; j++) { btns[j].remove(); }
-                var text = clone.innerText.trim();
-                
-                // چک کردن اینکه آیا هوش مصنوعی هنوز در حال تایپ است
-                var isGenerating = document.querySelector('button[aria-label*="Stop"], [class*="stop-button"]') !== null;
-                if (text.endsWith("●") || text.endsWith("▍")) {
-                    isGenerating = true;
-                    text = text.substring(0, text.length - 1);
-                }
-                
-                var b64 = btoa(unescape(encodeURIComponent(text)));
-                return JSON.stringify({ text: b64, isGenerating: isGenerating });
             })();
         """.trimIndent()
 
@@ -330,11 +323,9 @@ class AgentActivity : Activity() {
                         stableCounter++
                         if (stableCounter >= 4) { // ۴ ثانیه ثابت ماند
                             Logger.i("Agent", "Stable text detected. Length: ${text.length}")
-                            Logger.d("Agent", "Snippet: ${text.take(200)}")
+                            Logger.d("Agent", "Snippet: ${text.take(300)}")
                             
-                            // چک کردن اینکه آیا بلوک کد وجود دارد یا خیر
                             if (text.contains("```")) {
-                                // پیدا کردن آخرین بلوک کد (چه bash چه python)
                                 val regex = Regex("```(?:bash|sh|python)?\\n([\\s\\S]*?)```")
                                 val matches = regex.findAll(text)
                                 val lastMatch = matches.lastOrNull()
@@ -350,9 +341,7 @@ class AgentActivity : Activity() {
                                     return@evaluateJavascript
                                 }
                             } else {
-                                // اگر هنوز بلوک کد نیامده، به عنوان پاسخ نهایی در نظر نمی‌گیریم
                                 Logger.w("Agent", "No code block found in stable text. Waiting for AI to generate code...")
-                                // زمان انتظار را ریست می‌کنیم تا فرصت بیشتری بدهیم
                                 stableCounter = 0
                                 lastAiText = ""
                             }
