@@ -42,7 +42,6 @@ object NativeInstaller {
                 Os.chmod(tallocDest.absolutePath, 493)
             }
 
-            // ✅ تایم‌اوت استاندارد ۶۰ ثانیه‌ای برای جلوگیری از قفل شدن ترمینال
             val askScript = File(prefix, "bin/ask")
             askScript.writeText("""
                 #!/bin/sh
@@ -52,14 +51,17 @@ object NativeInstaller {
                 fi
                 REQ_FILE="/root/ai_req.txt"
                 RES_FILE="/root/ai_res.txt"
-                echo -n "${'$'}*" > "${'$'}REQ_FILE"
+                
+                # ارسال درخواست با Base64
+                echo -n "${'$'}*" | base64 > "${'$'}REQ_FILE"
+                
                 echo -e "\033[33mWaiting for AI... (Switch to browser if it's not open)\033[0m" >&2
                 
                 count=0
                 while [ ! -f "${'$'}RES_FILE" ]; do
                     sleep 0.5
                     count=${'$'}((count+1))
-                    if [ ${'$'}count -ge 120 ]; then
+                    if [ ${'$'}count -ge 360 ]; then
                         echo -e "\033[31mError: Timeout waiting for AI response\033[0m" >&2
                         rm -f "${'$'}REQ_FILE"
                         exit 1
@@ -67,7 +69,8 @@ object NativeInstaller {
                 done
                 
                 echo -e "\033[32mAI:\033[0m"
-                cat "${'$'}RES_FILE"
+                # دریافت پاسخ با Base64
+                base64 -d "${'$'}RES_FILE"
                 echo ""
                 rm -f "${'$'}REQ_FILE" "${'$'}RES_FILE"
             """.trimIndent())

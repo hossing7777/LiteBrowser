@@ -17,6 +17,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import java.io.File
+import java.util.Base64
 
 class MainActivity : Activity() {
 
@@ -74,7 +75,12 @@ class MainActivity : Activity() {
         Thread {
             while (isAiWatcherRunning) {
                 if (reqFile.exists()) {
-                    val prompt = reqFile.readText()
+                    val base64Prompt = reqFile.readText()
+                    val prompt = try {
+                        String(Base64.getDecoder().decode(base64Prompt))
+                    } catch (e: Exception) {
+                        base64Prompt // Fallback
+                    }
                     reqFile.delete()
                     runOnUiThread {
                         executeAiPrompt(prompt)
@@ -90,7 +96,6 @@ class MainActivity : Activity() {
     }
 
     private fun executeAiPrompt(prompt: String) {
-        // پاکسازی کاراکترهای خاص برای جلوگیری از خطای سینتکس در جاوااسکریپت
         val safePrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
         
         val js = """
@@ -101,45 +106,42 @@ class MainActivity : Activity() {
                     return;
                 }
                 
-                // ۱. فوکوس روی کادر و شبیه‌سازی دقیق تایپ کردن برای React
                 ta.focus();
                 document.execCommand('selectAll', false, null);
                 document.execCommand('insertText', false, "$safePrompt");
                 
                 setTimeout(function() {
-                    // ۲. تلاش برای شبیه‌سازی کلید Enter
                     ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
                     
-                    // ۳. پیدا کردن دکمه ارسال (Send) و کلیک روی آن
                     var buttons = document.querySelectorAll('button, div[role="button"]');
-                    var clicked = false;
                     for (var i = buttons.length - 1; i >= 0; i--) {
                         var btn = buttons[i];
-                        // بررسی اینکه دکمه آیکون دارد و در سمت راست کادر است
                         if (btn.querySelector('svg') && btn.offsetWidth > 0) {
                             var rect = btn.getBoundingClientRect();
                             var taRect = ta.getBoundingClientRect();
                             if (rect.left > taRect.left + (taRect.width / 2)) {
                                 btn.click();
-                                clicked = true;
                                 break;
                             }
                         }
                     }
 
-                    // ۴. نظارت بر پاسخ دیپ‌سیک
                     var lastText = "";
                     var stableCount = 0;
                     var attempts = 0;
                     var interval = setInterval(function() {
                         attempts++;
-                        // جستجوی پیام‌های هوش مصنوعی در صفحه
                         var msgs = document.querySelectorAll('.ds-markdown');
                         if (msgs.length > 0) {
-                            var currentText = msgs[msgs.length - 1].innerText;
+                            // ایجاد یک کپی از آخرین پیام برای دستکاری آن
+                            var clone = msgs[msgs.length - 1].cloneNode(true);
+                            // حذف دکمه‌های Copy و Download و آیکون‌ها از متن
+                            var btns = clone.querySelectorAll('button, .ds-icon-button');
+                            for(var j=0; j<btns.length; j++) { btns[j].remove(); }
+                            
+                            var currentText = clone.innerText;
                             if (currentText === lastText && currentText.length > 0) {
                                 stableCount++;
-                                // اگر متن ۲ ثانیه تغییر نکرد، یعنی پاسخ کامل شده
                                 if (stableCount >= 4) {
                                     clearInterval(interval);
                                     AndroidBridge.onAiResponse(currentText);
@@ -149,13 +151,13 @@ class MainActivity : Activity() {
                                 lastText = currentText;
                             }
                         }
-                        // تایم‌اوت ۹۰ ثانیه‌ای
-                        if (attempts > 180) { 
+                        // افزایش تایم‌اوت به ۱۸۰ ثانیه (360 * 0.5)
+                        if (attempts > 360) { 
                             clearInterval(interval);
                             AndroidBridge.onAiError("Timeout waiting for AI response");
                         }
                     }, 500);
-                }, 500); // ۰.۵ ثانیه صبر برای پردازش React
+                }, 500);
             })();
         """.trimIndent()
         

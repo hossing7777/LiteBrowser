@@ -5,6 +5,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.widget.Toast
 import java.io.File
+import java.util.Base64
 
 class WebAppInterface(private val context: Context, private val webView: WebView) {
 
@@ -12,7 +13,6 @@ class WebAppInterface(private val context: Context, private val webView: WebView
     fun runTerminalCommand(command: String) {
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
-            // ✅ استفاده از متد String برای write
             session.write("$command\r")
         } else {
             Toast.makeText(context, "هیچ جلسه ترمینالی فعال نیست!", Toast.LENGTH_SHORT).show()
@@ -26,7 +26,6 @@ class WebAppInterface(private val context: Context, private val webView: WebView
             val session = TerminalManager.sessions.firstOrNull()
             if (session != null && session.isRunning) {
                 val base64Text = android.util.Base64.encodeToString(cleanText?.toByteArray() ?: ByteArray(0), android.util.Base64.NO_WRAP)
-                // ✅ استفاده از متد String برای write
                 session.write("echo '$base64Text' | base64 -d > /root/scraped.txt\r")
                 Toast.makeText(context, "محتوای صفحه در /root/scraped.txt ذخیره شد", Toast.LENGTH_SHORT).show()
             }
@@ -37,7 +36,9 @@ class WebAppInterface(private val context: Context, private val webView: WebView
     fun onAiResponse(text: String) {
         try {
             val resFile = File(context.filesDir, "home/ai_res.txt")
-            resFile.writeText(text)
+            // ✅ تبدیل پاسخ به Base64 برای جلوگیری از خرابی کاراکترها
+            val base64Text = Base64.getEncoder().encodeToString(text.toByteArray(Charsets.UTF_8))
+            resFile.writeText(base64Text)
         } catch (e: Exception) {
             Logger.e("WebAppInterface", "Failed to write AI response", e)
         }
@@ -47,7 +48,8 @@ class WebAppInterface(private val context: Context, private val webView: WebView
     fun onAiError(error: String) {
         try {
             val resFile = File(context.filesDir, "home/ai_res.txt")
-            resFile.writeText("Error: $error")
+            val base64Text = Base64.getEncoder().encodeToString("Error: $error".toByteArray(Charsets.UTF_8))
+            resFile.writeText(base64Text)
         } catch (e: Exception) {
             Logger.e("WebAppInterface", "Failed to write AI error", e)
         }
