@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -21,12 +22,10 @@ class AgentActivity : Activity() {
     private lateinit var webView: WebView
     private val handler = Handler(Looper.getMainLooper())
     private var isRunning = false
+    private var isPageLoaded = false
     private val logBuilder = StringBuilder()
 
-    // فایل‌های ارتباطی بین کاتلین و لینوکس
-    private val reqFile by lazy { File(filesDir, "home/agent_req.txt") }
     private val outFile by lazy { File(filesDir, "home/agent_out.txt") }
-    private val resFile by lazy { File(filesDir, "home/agent_res.txt") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,15 +34,36 @@ class AgentActivity : Activity() {
         etPrompt = findViewById(R.id.et_agent_prompt)
         btnStart = findViewById(R.id.btn_agent_start)
         tvLog = findViewById(R.id.tv_agent_log)
+        webView = findViewById(R.id.agent_webview)
 
-        // وب‌ویو مخفی برای ارتباط با دیپ‌سیک
-        webView = WebView(this)
+        // تنظیمات وب‌ویو برای دریافت کوکی‌های لاگین از صفحه اصلی
         webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.setAcceptCookie(true)
+        cookieManager.setAcceptThirdPartyCookies(webView, true)
+
         webView.addJavascriptInterface(WebAppInterface(this, webView), "AndroidBridge")
-        webView.webViewClient = WebViewClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                isPageLoaded = true
+                log("✅ DeepSeek page loaded. Ready to start.")
+            }
+        }
+        
+        // بارگذاری دیپ‌سیک
         webView.loadUrl("https://chat.deepseek.com/")
 
         btnStart.setOnClickListener {
+            if (isRunning) {
+                Toast.makeText(this, "ایجنت در حال اجراست...", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (!isPageLoaded) {
+                Toast.makeText(this, "لطفاً صبر کنید تا صفحه دیپ‌سیک لود شود...", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             val prompt = etPrompt.text.toString().trim()
             if (prompt.isNotEmpty()) {
                 startAgent(prompt)
@@ -57,16 +77,17 @@ class AgentActivity : Activity() {
         runOnUiThread {
             logBuilder.append(msg).append("\n")
             tvLog.text = logBuilder.toString()
+            // اسکرول به پایین
+            val scrollView = tvLog.parent as android.view.View
+            (scrollView.parent as android.widget.ScrollView).fullScroll(android.view.View.FOCUS_DOWN)
         }
     }
 
     private fun startAgent(prompt: String) {
-        if (isRunning) return
         isRunning = true
         logBuilder.clear()
         log("🤖 Starting Agent with task: $prompt\n")
 
-        // دستور سیستم برای هوش مصنوعی
         val systemPrompt = """
             You are an AI autonomous agent operating inside an Alpine Linux terminal.
             Your goal is to complete the user's task by writing and executing bash commands.
@@ -87,8 +108,8 @@ class AgentActivity : Activity() {
         """.trimIndent()
 
         sendToAI(systemPrompt)
-        // شروع فرآیند خواندن پاسخ
-        handler.postDelayed({ checkAiResponse() }, 2000)
+        // صبر برای پاسخ اولیه
+        handler.postDelayed({ checkAiResponse() }, 3000)
     }
 
     private fun sendToAI(text: String) {
@@ -98,7 +119,7 @@ class AgentActivity : Activity() {
             (function() {
                 var ta = document.querySelector('textarea');
                 if (!ta) {
-                    AndroidBridge.onAgentError("Textarea not found. Please login to DeepSeek first.");
+                    AndroidBridge.onAgentError("Textarea not found. Please make sure you are logged in on the bottom screen.");
                     return;
                 }
                 ta.focus();
@@ -146,9 +167,13 @@ class AgentActivity : Activity() {
             if (result != null && result != "null" && result != "\"\"") {
                 val cleanText = result.replace("\\n", "\n").replace("\\\"", "\"").replace("\"", "")
                 if (cleanText.isNotEmpty() && cleanText != "TASK_COMPLETE") {
-                    // بررسی اینکه آیا پاسخ کامل شده است (تغییر نکرده)
                     if (cleanText.length > 10) {
-                        processAiResponse(cleanText)
+                        // اگر متن تغییر نکرده بود، یعنی پاسخ کامل است
+                        if (isResponseStable(cleanText)) {
+                            processAiResponse(cleanText)
+                        } else {
+                            handler.postDelayed({ checkAiResponse() }, 1000)
+                        }
                     } else {
                         handler.postDelayed({ checkAiResponse() }, 1000)
                     }
@@ -164,8 +189,17 @@ class AgentActivity : Activity() {
         }
     }
 
+    private var lastAiText = ""
+    private fun isResponseStable(text: String): Boolean {
+        if (text == lastAiText) {
+            lastAiText = ""
+            return true
+        }
+        lastAiText = text
+        return false
+    }
+
     private fun processAiResponse(aiText: String) {
-        // استخراج دستور از بلوک کد
         val regex = Regex("```(?:bash|sh)?\\n([\\s\\S]*?)```")
         val match = regex.find(aiText)
         
@@ -173,17 +207,13 @@ class AgentActivity : Activity() {
             val command = match.groupValues[1].trim()
             log("\n💻 Running Command:\n$command\n")
             
-            // ارسال دستور به ترمینال
             val session = TerminalManager.sessions.firstOrNull()
             if (session != null && session.isRunning) {
-                // اجرای دستور و ذخیره خروجی در فایل
                 val execCmd = "$command > /root/agent_out.txt 2>&1; echo '##DONE##' >> /root/agent_out.txt\r"
                 session.write(execCmd)
-                
-                // منتظر ماندن برای اتمام دستور
                 handler.postDelayed({ readTerminalOutput(aiText) }, 1500)
             } else {
-                log("❌ Error: No active terminal session.")
+                log("❌ Error: No active terminal session. Please open terminal first.")
                 isRunning = false
             }
         } else {
@@ -200,16 +230,12 @@ class AgentActivity : Activity() {
             if (content.contains("##DONE##")) {
                 val output = content.replace("##DONE##", "").trim()
                 log("\n📄 Output:\n$output\n")
-                outFile.delete() // پاک کردن فایل برای دستور بعدی
+                outFile.delete() 
                 
-                // ارسال خروجی به هوش مصنوعی برای تصمیم‌گیری بعدی
                 val nextPrompt = "Command Output:\n$output\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
                 sendToAI(nextPrompt)
-                
-                // صبر برای پاسخ جدید AI
                 handler.postDelayed({ checkAiResponse() }, 3000)
             } else {
-                // هنوز دستور تمام نشده
                 handler.postDelayed({ readTerminalOutput(previousAiText) }, 1000)
             }
         } else {
