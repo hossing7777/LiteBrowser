@@ -80,7 +80,11 @@ class MainActivity : Activity() {
                         executeAiPrompt(prompt)
                     }
                 }
-                Thread.sleep(500)
+                try {
+                    Thread.sleep(500)
+                } catch (e: InterruptedException) {
+                    break
+                }
             }
         }.start()
     }

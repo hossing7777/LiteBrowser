@@ -4,7 +4,6 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 
 object TerminalManager : TerminalSessionClient {
-    // لیست تمام جلسات فعال
     val sessions = mutableListOf<TerminalSession>()
     private var currentClient: TerminalSessionClient? = null
 
