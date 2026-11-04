@@ -75,7 +75,6 @@ class AgentActivity : Activity() {
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
-        // درخواست اجازه نوتیفیکیشن برای اجرا در پس‌زمینه (اندروید ۱۳+)
         requestNotificationPermission()
 
         handler.postDelayed({
@@ -343,28 +342,34 @@ class AgentActivity : Activity() {
             [ADVANCED CAPABILITIES - READ CAREFULLY]
             You have access to powerful tools. You MUST install them if they are missing before using them.
             
-            1. MUSIC/VIDEO DOWNLOADING:
+            1. WEB SCRAPING & DATA EXTRACTION (ADVANCED):
+               - You CAN extract data from websites and save it as CSV, Excel, or JSON.
+               - Install: `apk add python3 py3-pip py3-requests py3-beautifulsoup4 py3-pandas py3-lxml py3-openpyxl`
+               - Step 1: Write a Python script using `cat << 'PYEOF'`.
+               - Step 2: Use `requests` and `BeautifulSoup` to fetch and parse HTML. ALWAYS set User-Agent header: `headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}`.
+               - Step 3: Structure the data with a list of dictionaries.
+               - Step 4: Use `pandas` to save the data:
+                 * CSV: `df.to_csv('/root/Download/output.csv', index=False)`
+                 * Excel: `df.to_excel('/root/Download/output.xlsx', index=False)`
+                 * JSON: `df.to_json('/root/Download/output.json', orient='records')`
+               - IMPORTANT: If a website requires JavaScript to load data (like infinite scroll or dynamic tables), you MUST use the DeepSeek `[Search]` feature to get the data, OR advise the user that this site cannot be scraped statically.
+
+            2. MUSIC/VIDEO DOWNLOADING:
                - Tool: `yt-dlp`
                - Install: `apk add yt-dlp`
                - Usage: `yt-dlp -x --audio-format mp3 -o "/root/Download/%(title)s.%(ext)s" "URL"`
-               - For direct links (e.g., mp3 files from a website), use `wget -O "/root/Download/name.mp3" "URL"`.
             
-            2. DOCUMENT GENERATION (PDF / WORD):
-               - First, write your research content into a Markdown file using `cat << 'EOF' > /root/Download/research.md ... EOF`.
-               - Tool for PDF: `pandoc` and `wkhtmltopdf`
-               - Install: `apk add pandoc wkhtmltopdf`
-               - Usage (PDF): `pandoc /root/Download/research.md -o "/root/Download/Output.pdf" --pdf-engine=wkhtmltopdf`
-               - Tool for Word (docx): `pandoc`
-               - Usage (Word): `pandoc /root/Download/research.md -o "/root/Download/Output.docx"`
+            3. DOCUMENT GENERATION (PDF / WORD):
+               - Use Markdown + `pandoc`. Install: `apk add pandoc wkhtmltopdf`
+               - PDF: `pandoc /root/Download/research.md -o "/root/Download/Output.pdf" --pdf-engine=wkhtmltopdf`
+               - Word: `pandoc /root/Download/research.md -o "/root/Download/Output.docx"`
             
-            3. WEB RESEARCH & SCRAPING:
-               - If you need to search the web, use DeepSeek's built-in search feature in the chat UI if available.
-               - If you must use the terminal to fetch text, use `curl -s -L "URL" > /root/Download/page.html`.
-               - To extract text from HTML, install `lynx`: `apk add lynx && lynx -dump /root/Download/page.html > /root/Download/text.txt`.
+            4. WINDOWS EXECUTABLE (.EXE) GENERATION:
+               - Install: `apk add mingw-w64-gcc`
+               - Write C code, then compile: `x86_64-w64-mingw32-gcc /root/Download/main.c -o /root/Download/program.exe -static`
             
-            4. PYTHON SCRIPTING:
-               - For complex automation, write a Python script using `cat << 'PYEOF'`, then run `python3 script.py`.
-               - Install Python: `apk add python3 py3-pip`
+            5. PYTHON SCRIPTING & AUDIO:
+               - Install: `apk add python3 py3-pip py3-numpy`
 
             [SMART PACKAGE INSTALLATION]
             You have a local cache at /root/Local_AI_Models/Library_Cache/
@@ -412,9 +417,7 @@ class AgentActivity : Activity() {
                             if (document.body.innerText.includes("Messages are too frequent") || document.body.innerText.includes("پیام‌ها خیلی زیاد")) {
                                 return; 
                             }
-
                             ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-                            
                             var buttons = document.querySelectorAll('button, div[role="button"]');
                             for (var i = buttons.length - 1; i >= 0; i--) {
                                 var btn = buttons[i];
@@ -428,7 +431,6 @@ class AgentActivity : Activity() {
                                     }
                                 }
                             }
-                            
                             setTimeout(function() {
                                 var currentText = ta.value || ta.innerText || "";
                                 if (currentText.trim().length > 0 && clickAttempts < maxAttempts) {
@@ -460,11 +462,9 @@ class AgentActivity : Activity() {
             (function() {
                 try {
                     window.scrollTo(0, document.body.scrollHeight);
-                    
                     if (document.body.innerText.includes("Messages are too frequent") || document.body.innerText.includes("پیام‌ها خیلی زیاد")) {
                         return JSON.stringify({ rateLimited: true });
                     }
-
                     var markdowns = document.querySelectorAll('.ds-markdown');
                     if (markdowns.length === 0) return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, progress: -1, aiText: "" });
                     var lastMd = markdowns[markdowns.length - 1];
