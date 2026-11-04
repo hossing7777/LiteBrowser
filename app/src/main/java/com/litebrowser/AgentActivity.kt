@@ -9,8 +9,6 @@ import android.os.Looper
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
 import android.util.Base64
-import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebView
@@ -23,13 +21,10 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.termux.terminal.TerminalSession
-import com.termux.terminal.TerminalSessionClient
-import com.termux.view.TerminalView
-import com.termux.view.TerminalViewClient
 import java.io.File
 import kotlin.concurrent.thread
 
-class AgentActivity : Activity(), TerminalViewClient {
+class AgentActivity : Activity() {
 
     private lateinit var etPrompt: EditText
     private lateinit var btnStart: Button
@@ -42,7 +37,6 @@ class AgentActivity : Activity(), TerminalViewClient {
     private lateinit var layoutProgress: LinearLayout
     private lateinit var pbTaskProgress: ProgressBar
     private lateinit var tvProgressPercent: TextView
-    private lateinit var terminalView: TerminalView
 
     private val handler = Handler(Looper.getMainLooper())
     private var isRunning = false
@@ -78,10 +72,6 @@ class AgentActivity : Activity(), TerminalViewClient {
         layoutProgress = findViewById(R.id.layout_progress)
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
-        terminalView = findViewById(R.id.agent_terminal_view)
-
-        // ✅ رفع کرش: تنظیم کلاینت برای ترمینال زنده
-        terminalView.setTerminalViewClient(this)
 
         handler.postDelayed({
             setupWebView()
@@ -119,6 +109,7 @@ class AgentActivity : Activity(), TerminalViewClient {
             updateStatus("")
             updateProgress(0)
             toggleButtons(running = false)
+            stopService(Intent(this, AgentForegroundService::class.java))
         }
     }
 
@@ -175,14 +166,6 @@ class AgentActivity : Activity(), TerminalViewClient {
             session.updateSize(80, 24)
             TerminalManager.addSession(session)
         }
-
-        runOnUiThread {
-            val activeSession = TerminalManager.sessions.firstOrNull()
-            if (activeSession != null) {
-                terminalView.setTextSize(10)
-                terminalView.attachSession(activeSession)
-            }
-        }
     }
 
     private fun setupWebView() {
@@ -206,6 +189,19 @@ class AgentActivity : Activity(), TerminalViewClient {
                 log("✅ DeepSeek page loaded. Ready to start.\n", Color.GREEN)
             }
         }
+    }
+
+    // Keep WebView alive in the background
+    override fun onPause() {
+        super.onPause()
+        webView.onResume()
+        webView.resumeTimers()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        webView.onResume()
+        webView.resumeTimers()
     }
 
     private fun log(msg: String, color: Int = Color.WHITE) {
@@ -248,8 +244,6 @@ class AgentActivity : Activity(), TerminalViewClient {
         currentChatMessages.add(ChatMessage(role, content))
         currentChatFolder?.let { ChatManager.saveChatHistory(it, currentChatMessages) }
     }
-
-    // === MEMORY SYSTEM ===
 
     private fun buildMemoryContext(): String {
         if (recentSteps.isEmpty() && aiNotes.isEmpty() && originalTask.isEmpty()) return ""
@@ -299,14 +293,14 @@ class AgentActivity : Activity(), TerminalViewClient {
         } catch (e: Exception) {}
     }
 
-    // === MAIN FLOW ===
-
     private fun startAgent(prompt: String) {
         isRunning = true
         toggleButtons(running = true)
         logBuilder.clear()
         updateStatus("")
         updateProgress(0)
+
+        startForegroundService(Intent(this, AgentForegroundService::class.java))
 
         originalTask = prompt
         recentSteps.clear()
@@ -395,7 +389,8 @@ class AgentActivity : Activity(), TerminalViewClient {
     private fun checkAiResponse() {
         if (!isRunning) return
         aiCheckAttempts++
-        if (aiCheckAttempts > 300) {
+        // ✅ افزایش زمان انتظار به 5 دقیقه (600 * 500ms)
+        if (aiCheckAttempts > 600) {
             log("❌ Error: Total timeout waiting for AI response.", Color.RED)
             updateStatus(""); stopAgent(); return
         }
@@ -458,6 +453,7 @@ class AgentActivity : Activity(), TerminalViewClient {
                     updateStatus(""); updateProgress(100)
                     saveMessageToChat("ai", "TASK_COMPLETE")
                     isRunning = false; toggleButtons(running = false)
+                    stopService(Intent(this, AgentForegroundService::class.java))
                     return@evaluateJavascript
                 }
                 if (progress >= 0) updateProgress(progress)
@@ -505,7 +501,8 @@ class AgentActivity : Activity(), TerminalViewClient {
 
     private fun readTerminalOutput(startMarker: String, endMarker: String, attempts: Int) {
         if (!isRunning) return
-        if (attempts > 240) {
+        // ✅ افزایش زمان انتظار به 5 دقیقه (600 * 500ms)
+        if (attempts > 600) {
             log("❌ Error: Command execution timed out.", Color.RED)
             updateStatus(""); stopAgent(); return
         }
@@ -561,31 +558,4 @@ class AgentActivity : Activity(), TerminalViewClient {
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
-
-    // ==========================================
-    // TerminalViewClient Implementation (Required for TerminalView to work without crashing)
-    // ==========================================
-    override fun onScale(scale: Float): Float = 1.0f
-    override fun onSingleTapUp(e: MotionEvent?) {}
-    override fun shouldBackButtonBeMappedToEscape(): Boolean = false
-    override fun shouldEnforceCharBasedInput(): Boolean = false
-    override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
-    override fun isTerminalViewSelected(): Boolean = false
-    override fun copyModeChanged(copyMode: Boolean) {}
-    override fun onKeyDown(keyCode: Int, e: KeyEvent?, session: TerminalSession?): Boolean = false
-    override fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean = false
-    override fun onLongPress(event: MotionEvent?): Boolean = false
-    override fun readControlKey(): Boolean = false
-    override fun readAltKey(): Boolean = false
-    override fun readShiftKey(): Boolean = false
-    override fun readFnKey(): Boolean = false
-    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean = false
-    override fun onEmulatorSet() {}
-    override fun logError(tag: String?, message: String?) {}
-    override fun logWarn(tag: String?, message: String?) {}
-    override fun logInfo(tag: String?, message: String?) {}
-    override fun logDebug(tag: String?, message: String?) {}
-    override fun logVerbose(tag: String?, message: String?) {}
-    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {}
-    override fun logStackTrace(tag: String?, e: Exception?) {}
 }

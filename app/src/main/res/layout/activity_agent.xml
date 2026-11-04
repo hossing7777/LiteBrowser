@@ -119,7 +119,7 @@
         android:layout_marginBottom="4dp"
         android:visibility="gone" />
 
-    <!-- Log View (Scrollable) -->
+    <!-- Log View (Colored Logs) -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -138,45 +138,22 @@
             android:text="Agent is ready..." />
     </ScrollView>
 
-    <!-- Live Terminal & WebView Split -->
-    <LinearLayout
+    <!-- WebView (Full Bottom Area - No Terminal) -->
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="160dp"
-        android:orientation="horizontal"
-        android:background="#000000">
-
-        <!-- Live Terminal View -->
-        <FrameLayout
-            android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#FFFFFF">
+        <WebView
+            android:id="@+id/agent_webview"
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="#000000">
-            <com.termux.view.TerminalView
-                android:id="@+id/agent_terminal_view"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:focusable="false"
-                android:focusableInTouchMode="false" />
-        </FrameLayout>
-
-        <!-- Hidden WebView (DeepSeek) -->
-        <FrameLayout
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="1"
-            android:background="#FFFFFF">
-            <WebView
-                android:id="@+id/agent_webview"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="#FFFFFF" />
-            <ProgressBar
-                android:id="@+id/agent_progress"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:visibility="gone" />
-        </FrameLayout>
-
-    </LinearLayout>
+            android:background="#FFFFFF" />
+        <ProgressBar
+            android:id="@+id/agent_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+    </FrameLayout>
 </LinearLayout>
