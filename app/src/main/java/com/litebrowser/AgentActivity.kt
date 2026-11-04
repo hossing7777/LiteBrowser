@@ -371,16 +371,20 @@ class AgentActivity : Activity() {
             5. PYTHON SCRIPTING & AUDIO:
                - Install: `apk add python3 py3-pip py3-numpy`
 
-            [SMART PACKAGE INSTALLATION]
-            You have a local cache at /root/Local_AI_Models/Library_Cache/
-            If you need to install an 'apk' package, use this logic:
+            [SMART PACKAGE INSTALLATION & OFFLINE CACHE]
+            You MUST use this exact logic for installing ANY package to ensure offline caching works:
+            
             PACKAGE="package_name"
             CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
+            mkdir -p "${'$'}CACHE_DIR"
+            
             if ls ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk 1> /dev/null 2>&1; then
-                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk || { apk add --no-cache ${'$'}PACKAGE; cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null; }
+                echo "📦 [Local Cache] Installing ${'$'}PACKAGE from offline cache..."
+                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk || apk add --no-cache ${'$'}PACKAGE
             else
-                apk add --no-cache ${'$'}PACKAGE
-                cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null || true
+                echo "🌐 [Internet] Downloading ${'$'}PACKAGE and saving to cache..."
+                apk fetch --recursive -o "${'$'}CACHE_DIR" ${'$'}PACKAGE
+                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/*.apk || apk add --no-cache ${'$'}PACKAGE
             fi
 
             [TASK]
