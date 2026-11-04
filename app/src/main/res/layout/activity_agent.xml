@@ -32,25 +32,47 @@
             android:textColor="#FFFFFF" />
     </LinearLayout>
 
+    <!-- ✅ کادر ورودی با قابلیت اسکرول و حداکثر ۶ خط -->
     <EditText
         android:id="@+id/et_agent_prompt"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="درخواست خود را وارد کنید..."
         android:minLines="2"
+        android:maxLines="6"
+        android:scrollbars="vertical"
+        android:inputType="textMultiLine"
         android:gravity="top|start"
         android:background="@android:drawable/edit_text"
         android:padding="8dp"
         android:layout_marginBottom="8dp"/>
 
-    <Button
-        android:id="@+id/btn_agent_start"
+    <!-- ✅ دکمه‌های Start و Stop -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="شروع ایجنت (Start)"
-        android:backgroundTint="#4CAF50"
-        android:textColor="#FFFFFF"
-        android:layout_marginBottom="8dp"/>
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <Button
+            android:id="@+id/btn_agent_start"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="شروع ایجنت (Start)"
+            android:backgroundTint="#4CAF50"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/btn_agent_stop"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="توقف (Stop)"
+            android:backgroundTint="#F44336"
+            android:textColor="#FFFFFF"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"

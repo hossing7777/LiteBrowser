@@ -25,6 +25,7 @@ class AgentActivity : Activity() {
 
     private lateinit var etPrompt: EditText
     private lateinit var btnStart: Button
+    private lateinit var btnStop: Button // ✅ دکمه توقف
     private lateinit var btnHistory: Button
     private lateinit var tvLog: TextView
     private lateinit var tvStatus: TextView
@@ -42,7 +43,6 @@ class AgentActivity : Activity() {
 
     private val agentCodeFile by lazy { File(filesDir, "home/agent_code.txt") }
     
-    // متغیرهای مدیریت چت
     private var currentChatFolder: File? = null
     private val currentChatMessages = mutableListOf<ChatMessage>()
 
@@ -53,12 +53,12 @@ class AgentActivity : Activity() {
         
         etPrompt = findViewById(R.id.et_agent_prompt)
         btnStart = findViewById(R.id.btn_agent_start)
+        btnStop = findViewById(R.id.btn_agent_stop)
         btnHistory = findViewById(R.id.btn_agent_history)
         tvLog = findViewById(R.id.tv_agent_log)
         tvStatus = findViewById(R.id.tv_agent_status)
         webView = findViewById(R.id.agent_webview)
         progressBar = findViewById(R.id.agent_progress)
-
         layoutProgress = findViewById(R.id.layout_progress)
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
@@ -90,6 +90,38 @@ class AgentActivity : Activity() {
                 startAgent(prompt)
             } else {
                 Toast.makeText(this, "لطفا یک درخواست وارد کنید", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // ✅ عملکرد دکمه توقف
+        btnStop.setOnClickListener {
+            if (isRunning) {
+                isRunning = false
+                handler.removeCallbacksAndMessages(null) // لغو تمام تایمرهای در انتظار
+                
+                // ارسال سیگنال Ctrl+C به ترمینال برای متوقف کردن دستورات در حال اجرا
+                val session = TerminalManager.sessions.firstOrNull()
+                if (session != null && session.isRunning) {
+                    session.write("\u0003")
+                }
+                
+                log("\n🛑 Agent stopped by user.")
+                updateStatus("")
+                updateProgress(0)
+                toggleButtons(isRunning = false)
+            }
+        }
+    }
+
+    // ✅ متد جدید برای مدیریت نمایش دکمه‌ها
+    private fun toggleButtons(running: Boolean) {
+        runOnUiThread {
+            if (running) {
+                btnStart.isEnabled = false
+                btnStop.visibility = View.VISIBLE
+            } else {
+                btnStart.isEnabled = true
+                btnStop.visibility = View.GONE
             }
         }
     }
@@ -162,7 +194,6 @@ class AgentActivity : Activity() {
                 runOnUiThread { progressBar.visibility = View.GONE }
                 isPageLoaded = true
                 log("✅ DeepSeek page loaded. Ready to start.")
-                Logger.i("Agent", "WebView loaded")
             }
         }
     }
@@ -187,14 +218,9 @@ class AgentActivity : Activity() {
             } else {
                 tvStatus.visibility = View.VISIBLE
                 tvStatus.text = "⏳ $status"
-                
-                if (status.contains("[Local Cache]")) {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
-                } else if (status.contains("[Internet]")) {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3"))
-                } else {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3"))
-                }
+                if (status.contains("[Local Cache]")) tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
+                else if (status.contains("[Internet]")) tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3"))
+                else tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3"))
             }
         }
     }
@@ -204,12 +230,7 @@ class AgentActivity : Activity() {
             layoutProgress.visibility = View.VISIBLE
             pbTaskProgress.progress = percent
             tvProgressPercent.text = "$percent%"
-            
-            if (percent == 100) {
-                tvProgressPercent.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
-            } else {
-                tvProgressPercent.setTextColor(android.graphics.Color.parseColor("#2196F3"))
-            }
+            tvProgressPercent.setTextColor(if (percent == 100) android.graphics.Color.parseColor("#4CAF50") else android.graphics.Color.parseColor("#2196F3"))
         }
     }
     
@@ -220,13 +241,12 @@ class AgentActivity : Activity() {
 
     private fun startAgent(prompt: String) {
         isRunning = true
+        toggleButtons(running = true) // ✅ فعال کردن دکمه Stop
         logBuilder.clear()
         updateStatus("")
         updateProgress(0)
         log("🤖 Starting Agent with task: $prompt\n")
-        Logger.i("Agent", "startAgent called: $prompt")
         
-        // ایجاد پوشه چت جدید
         currentChatFolder = ChatManager.createNewChat(prompt)
         currentChatMessages.clear()
         saveMessageToChat("user", prompt)
@@ -242,7 +262,6 @@ class AgentActivity : Activity() {
             [PROGRESS REPORTING]
             After completing a major step of the task, you MUST include a progress indicator on a new line at the very end of your response (OUTSIDE the code block). Format it exactly as:
             [PROGRESS: X%]
-            (Replace X with your estimated percentage of completion from 0 to 100.)
             
             [SMART PACKAGE INSTALLATION]
             You have a local cache at /root/Local_AI_Models/Library_Cache/
@@ -270,7 +289,6 @@ class AgentActivity : Activity() {
 
     private fun sendToAI(text: String) {
         log("📤 Sending prompt to AI...")
-        Logger.i("Agent", "Sending to AI...")
         val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         
         val js = """
@@ -323,6 +341,7 @@ class AgentActivity : Activity() {
             log("❌ Error: Total timeout waiting for AI response.")
             updateStatus("")
             isRunning = false
+            toggleButtons(running = false)
             return
         }
 
@@ -400,7 +419,6 @@ class AgentActivity : Activity() {
                 val taskComplete = jsonObj.optBoolean("taskComplete", false)
                 val alreadyProcessed = jsonObj.optBoolean("alreadyProcessed", false)
                 val progress = jsonObj.optInt("progress", -1)
-                val aiText = jsonObj.optString("aiText", "")
                 
                 if (taskComplete) {
                     log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.")
@@ -408,6 +426,7 @@ class AgentActivity : Activity() {
                     updateProgress(100)
                     saveMessageToChat("ai", "TASK_COMPLETE")
                     isRunning = false
+                    toggleButtons(running = false) // ✅ مخفی کردن دکمه Stop
                     return@evaluateJavascript
                 }
 
@@ -431,7 +450,7 @@ class AgentActivity : Activity() {
                     
                     if (text.isNotEmpty()) {
                         log("📥 AI response received. (${text.length} chars)")
-                        saveMessageToChat("ai", text) // ذخیره پاسخ هوش مصنوعی
+                        saveMessageToChat("ai", text)
                         aiCheckAttempts = 0
                         processAiResponse(text)
                     }
@@ -465,6 +484,7 @@ class AgentActivity : Activity() {
         } else {
             log("❌ Error: No terminal session.")
             isRunning = false
+            toggleButtons(running = false)
         }
     }
 
@@ -475,6 +495,7 @@ class AgentActivity : Activity() {
             log("❌ Error: Command execution timed out.")
             updateStatus("")
             isRunning = false
+            toggleButtons(running = false)
             return
         }
 
@@ -507,7 +528,7 @@ class AgentActivity : Activity() {
                     runOnUiThread {
                         updateStatus("") 
                         log("\n📄 Output:\n$finalOutput\n")
-                        saveMessageToChat("terminal_output", finalOutput) // ذخیره خروجی ترمینال
+                        saveMessageToChat("terminal_output", finalOutput)
                         
                         val nextPrompt = "Command Output:\n$finalOutput\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
                         sendToAI(nextPrompt)
