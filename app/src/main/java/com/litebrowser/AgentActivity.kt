@@ -168,12 +168,13 @@ class AgentActivity : Activity() {
                 tvStatus.visibility = View.VISIBLE
                 tvStatus.text = "⏳ $status"
                 
-                if (status.contains("[LOCAL INSTALL]")) {
+                // ✅ تغییر رنگ نوار وضعیت بر اساس پیام‌های جدید
+                if (status.contains("[Local Cache]")) {
                     tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")) // Green
-                } else if (status.contains("[INTERNET INSTALL]")) {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#FF9800")) // Orange
-                } else {
+                } else if (status.contains("[Internet]")) {
                     tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3")) // Blue
+                } else {
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3")) // Default Blue
                 }
             }
         }
@@ -188,7 +189,7 @@ class AgentActivity : Activity() {
         
         ensureTerminalSession()
 
-        // ✅ پرامپت بسیار دقیق: فقط پکیج مورد نیاز را بررسی می‌کند، از لوکال نصب می‌کند اگر نبود از اینترنت و ذخیره می‌کند.
+        // ✅ پرامپت سیستم آپدیت شد تا از کدهای رنگی ANSI و آیکون استفاده کند
         val systemPrompt = """
             [INSTRUCTIONS]
             You are an Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
@@ -197,17 +198,17 @@ class AgentActivity : Activity() {
             
             [SMART PACKAGE INSTALLATION]
             You have a local cache at /root/Local_AI_Models/Library_Cache/
-            If you need to install an 'apk' package, YOU MUST use this exact logic:
+            If you need to install an 'apk' package, YOU MUST use this exact logic (with colors):
             
             PACKAGE="package_name"
             CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
             if ls ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk 1> /dev/null 2>&1; then
-                echo "[LOCAL INSTALL] Installing ${'$'}PACKAGE from local cache..."
-                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk || { echo "[FALLBACK] Local failed, trying internet..."; apk add --no-cache ${'$'}PACKAGE; cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null; }
+                echo -e "\033[32m📦 [Local Cache] Installing ${'$'}PACKAGE from local storage...\033[0m"
+                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk || { echo -e "\033[34m🌐 [Internet] Downloading ${'$'}PACKAGE...\033[0m"; apk add --no-cache ${'$'}PACKAGE; cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null; }
             else
-                echo "[INTERNET INSTALL] Installing ${'$'}PACKAGE from internet..."
+                echo -e "\033[34m🌐 [Internet] Downloading ${'$'}PACKAGE...\033[0m"
                 apk add --no-cache ${'$'}PACKAGE
-                echo "[CACHE SAVE] Saving ${'$'}PACKAGE to local cache..."
+                echo "[Saving] Saving ${'$'}PACKAGE to local cache..."
                 cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null || true
             fi
             
@@ -216,12 +217,12 @@ class AgentActivity : Activity() {
             PACKAGE="package_name"
             CACHE_DIR="/root/Local_AI_Models/Library_Cache/pip"
             if ls ${'$'}CACHE_DIR | grep -q "^${'$'}PACKAGE-"; then
-                echo "[LOCAL INSTALL] Installing ${'$'}PACKAGE from local pip cache..."
-                pip install --no-index --find-links=${'$'}CACHE_DIR ${'$'}PACKAGE || { echo "[FALLBACK] Local pip failed, trying internet..."; pip install ${'$'}PACKAGE; pip download ${'$'}PACKAGE -d ${'$'}CACHE_DIR > /dev/null 2>&1; }
+                echo -e "\033[32m📦 [Local Cache] Installing ${'$'}PACKAGE from local storage...\033[0m"
+                pip install --no-index --find-links=${'$'}CACHE_DIR ${'$'}PACKAGE || { echo -e "\033[34m🌐 [Internet] Downloading ${'$'}PACKAGE...\033[0m"; pip install ${'$'}PACKAGE; pip download ${'$'}PACKAGE -d ${'$'}CACHE_DIR > /dev/null 2>&1; }
             else
-                echo "[INTERNET INSTALL] Installing ${'$'}PACKAGE from internet..."
+                echo -e "\033[34m🌐 [Internet] Downloading ${'$'}PACKAGE...\033[0m"
                 pip install ${'$'}PACKAGE
-                echo "[CACHE SAVE] Saving ${'$'}PACKAGE to local pip cache..."
+                echo "[Saving] Saving ${'$'}PACKAGE to local cache..."
                 pip download ${'$'}PACKAGE -d ${'$'}CACHE_DIR > /dev/null 2>&1 || true
             fi
             
@@ -475,10 +476,10 @@ class AgentActivity : Activity() {
                 val lines = screenText.trim().lines()
                 if (lines.isNotEmpty()) {
                     val lastLine = lines.last().replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "").trim()
-                    // ✅ تشخیص دقیق پیام‌های نصب برای تغییر رنگ نوار وضعیت
-                    if (lastLine.contains("[LOCAL INSTALL]") || lastLine.contains("[INTERNET INSTALL]") || 
-                        lastLine.contains("[CACHE SAVE]") || lastLine.contains("[FALLBACK]") ||
-                        lastLine.contains("%") || (lastLine.isNotEmpty() && lastLine.length < 100)) {
+                    // ✅ بررسی کلمات کلیدی جدید برای آپدیت نوار وضعیت
+                    if (lastLine.contains("[Local Cache]") || lastLine.contains("[Internet]") || 
+                        lastLine.contains("[Saving]") || lastLine.contains("%") || 
+                        (lastLine.isNotEmpty() && lastLine.length < 100)) {
                         runOnUiThread { updateStatus(lastLine) }
                     }
                 }
