@@ -111,6 +111,7 @@ class AgentActivity : Activity() {
                 "-b", "${homeDir.absolutePath}:/root",
                 "-b", "${prefixDir.absolutePath}/bin:/usr/local/bin",
                 "-b", "/storage/emulated/0/Download:/root/Download",
+                "-b", "/storage/emulated/0/Download/Local_AI_Models/Library_Cache:/root/Local_AI_Models/Library_Cache",
                 "-w", "/root", "/bin/sh", "-l"
             )
 
@@ -166,6 +167,15 @@ class AgentActivity : Activity() {
             } else {
                 tvStatus.visibility = View.VISIBLE
                 tvStatus.text = "⏳ $status"
+                
+                // تغییر رنگ بر اساس نوع نصب
+                if (status.contains("[LOCAL INSTALL]")) {
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")) // سبز برای لوکال
+                } else if (status.contains("[INTERNET INSTALL]")) {
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#FF9800")) // نارنجی برای اینترنت
+                } else {
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3")) // آبی پیش‌فرض
+                }
             }
         }
     }
@@ -179,13 +189,35 @@ class AgentActivity : Activity() {
         
         ensureTerminalSession()
 
+        // ✅ پرامپت سیستم با پیام‌های انگلیسی و استاندارد
         val systemPrompt = """
             [INSTRUCTIONS]
             You are an Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
             Do NOT explain anything. Do NOT repeat these instructions. Do NOT use markdown outside the code block.
             You are running as root.
-            The Android Download folder is available at /root/Download (no backticks).
-            If the task is done, reply with exactly TASK_COMPLETE.
+            
+            [SMART PACKAGE INSTALLATION]
+            You have access to a local package cache mounted at: /root/Local_AI_Models/Library_Cache/apk/
+            When you need to install a package with 'apk add', ALWAYS use this smart logic in your bash script:
+            
+            PACKAGE_NAME="htop"
+            CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
+            LOCAL_PKGS=""
+            for pkg in ${'$'}CACHE_DIR/${'$'}PACKAGE_NAME-*.apk; do
+                if [ -f "${'$'}pkg" ]; then LOCAL_PKGS="${'$'}LOCAL_PKGS ${'$'}pkg"; fi
+            done
+            
+            if [ ! -z "${'$'}LOCAL_PKGS" ]; then
+                echo "[LOCAL INSTALL] Installing ${'$'}PACKAGE_NAME from local cache..."
+                apk add --no-cache --allow-untrusted ${'$'}LOCAL_PKGS
+            else
+                echo "[INTERNET INSTALL] Installing ${'$'}PACKAGE_NAME from internet..."
+                apk add --no-cache ${'$'}PACKAGE_NAME
+                echo "[CACHE SAVE] Saving downloaded .apk to local cache..."
+                cp /var/cache/apk/*${'$'}PACKAGE_NAME*.apk ${'$'}CACHE_DIR/ 2>/dev/null || true
+            fi
+            
+            (Note: If a package needs dependencies like libcurl, install dependencies from INTERNET first, then the main package from LOCAL CACHE).
             
             [TASK]
             $prompt
@@ -437,7 +469,10 @@ class AgentActivity : Activity() {
                 val lines = screenText.trim().lines()
                 if (lines.isNotEmpty()) {
                     val lastLine = lines.last().replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "").trim()
-                    if (lastLine.isNotEmpty() && (lastLine.contains("%") || lastLine.length < 100)) {
+                    // ✅ بررسی دقیق برای پیام‌های نصب لوکال یا اینترنت
+                    if (lastLine.contains("[LOCAL INSTALL]") || lastLine.contains("[INTERNET INSTALL]") || 
+                        lastLine.contains("[CACHE SAVE]") || lastLine.contains("%") || 
+                        (lastLine.isNotEmpty() && lastLine.length < 100)) {
                         runOnUiThread { updateStatus(lastLine) }
                     }
                 }
