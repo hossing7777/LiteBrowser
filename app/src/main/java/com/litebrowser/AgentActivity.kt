@@ -1,6 +1,7 @@
 package com.litebrowser
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -24,12 +25,11 @@ class AgentActivity : Activity() {
 
     private lateinit var etPrompt: EditText
     private lateinit var btnStart: Button
+    private lateinit var btnHistory: Button
     private lateinit var tvLog: TextView
     private lateinit var tvStatus: TextView
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
-
-    // ✅ متغیرهای مربوط به نوار پیشرفت پروژه
     private lateinit var layoutProgress: LinearLayout
     private lateinit var pbTaskProgress: ProgressBar
     private lateinit var tvProgressPercent: TextView
@@ -41,6 +41,10 @@ class AgentActivity : Activity() {
     private var lastStatusLine = ""
 
     private val agentCodeFile by lazy { File(filesDir, "home/agent_code.txt") }
+    
+    // متغیرهای مدیریت چت
+    private var currentChatFolder: File? = null
+    private val currentChatMessages = mutableListOf<ChatMessage>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,6 +53,7 @@ class AgentActivity : Activity() {
         
         etPrompt = findViewById(R.id.et_agent_prompt)
         btnStart = findViewById(R.id.btn_agent_start)
+        btnHistory = findViewById(R.id.btn_agent_history)
         tvLog = findViewById(R.id.tv_agent_log)
         tvStatus = findViewById(R.id.tv_agent_status)
         webView = findViewById(R.id.agent_webview)
@@ -66,6 +71,10 @@ class AgentActivity : Activity() {
             setupWebView()
             webView.loadUrl("https://chat.deepseek.com/")
         }, 800)
+
+        btnHistory.setOnClickListener {
+            startActivity(Intent(this, ChatHistoryActivity::class.java))
+        }
 
         btnStart.setOnClickListener {
             if (isRunning) {
@@ -180,17 +189,16 @@ class AgentActivity : Activity() {
                 tvStatus.text = "⏳ $status"
                 
                 if (status.contains("[Local Cache]")) {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")) // Green
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
                 } else if (status.contains("[Internet]")) {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3")) // Blue
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3"))
                 } else {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3")) // Default Blue
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3"))
                 }
             }
         }
     }
 
-    // ✅ متد جدید برای آپدیت درصد پیشرفت
     private fun updateProgress(percent: Int) {
         runOnUiThread {
             layoutProgress.visibility = View.VISIBLE
@@ -198,24 +206,33 @@ class AgentActivity : Activity() {
             tvProgressPercent.text = "$percent%"
             
             if (percent == 100) {
-                tvProgressPercent.setTextColor(android.graphics.Color.parseColor("#4CAF50")) // Green for 100%
+                tvProgressPercent.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
             } else {
-                tvProgressPercent.setTextColor(android.graphics.Color.parseColor("#2196F3")) // Blue
+                tvProgressPercent.setTextColor(android.graphics.Color.parseColor("#2196F3"))
             }
         }
+    }
+    
+    private fun saveMessageToChat(role: String, content: String) {
+        currentChatMessages.add(ChatMessage(role, content))
+        currentChatFolder?.let { ChatManager.saveChatHistory(it, currentChatMessages) }
     }
 
     private fun startAgent(prompt: String) {
         isRunning = true
         logBuilder.clear()
         updateStatus("")
-        updateProgress(0) // ریست کردن نوار پیشرفت
+        updateProgress(0)
         log("🤖 Starting Agent with task: $prompt\n")
         Logger.i("Agent", "startAgent called: $prompt")
         
+        // ایجاد پوشه چت جدید
+        currentChatFolder = ChatManager.createNewChat(prompt)
+        currentChatMessages.clear()
+        saveMessageToChat("user", prompt)
+        
         ensureTerminalSession()
 
-        // ✅ پرامپت سیستم آپدیت شد تا درصد پیشرفت و chmod را رعایت کند
         val systemPrompt = """
             [INSTRUCTIONS]
             You are an Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
@@ -225,11 +242,11 @@ class AgentActivity : Activity() {
             [PROGRESS REPORTING]
             After completing a major step of the task, you MUST include a progress indicator on a new line at the very end of your response (OUTSIDE the code block). Format it exactly as:
             [PROGRESS: X%]
-            (Replace X with your estimated percentage of completion from 0 to 100. E.g., [PROGRESS: 50%])
+            (Replace X with your estimated percentage of completion from 0 to 100.)
             
             [SMART PACKAGE INSTALLATION]
             You have a local cache at /root/Local_AI_Models/Library_Cache/
-            If you need to install an 'apk' package, YOU MUST use this exact logic (with colors):
+            If you need to install an 'apk' package, YOU MUST use this exact logic:
             
             PACKAGE="package_name"
             CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
@@ -241,20 +258,6 @@ class AgentActivity : Activity() {
                 apk add --no-cache ${'$'}PACKAGE
                 echo "[Saving] Saving ${'$'}PACKAGE to local cache..."
                 cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null || true
-            fi
-            
-            If you need to install a 'pip' package, YOU MUST use this exact logic:
-            
-            PACKAGE="package_name"
-            CACHE_DIR="/root/Local_AI_Models/Library_Cache/pip"
-            if ls ${'$'}CACHE_DIR | grep -q "^${'$'}PACKAGE-"; then
-                echo -e "\033[32m📦 [Local Cache] Installing ${'$'}PACKAGE from local storage...\033[0m"
-                pip install --no-index --find-links=${'$'}CACHE_DIR ${'$'}PACKAGE || { echo -e "\033[34m🌐 [Internet] Downloading ${'$'}PACKAGE...\033[0m"; pip install ${'$'}PACKAGE; pip download ${'$'}PACKAGE -d ${'$'}CACHE_DIR > /dev/null 2>&1; }
-            else
-                echo -e "\033[34m🌐 [Internet] Downloading ${'$'}PACKAGE...\033[0m"
-                pip install ${'$'}PACKAGE
-                echo "[Saving] Saving ${'$'}PACKAGE to local cache..."
-                pip download ${'$'}PACKAGE -d ${'$'}CACHE_DIR > /dev/null 2>&1 || true
             fi
             
             [TASK]
@@ -318,7 +321,6 @@ class AgentActivity : Activity() {
         
         if (aiCheckAttempts > 300) {
             log("❌ Error: Total timeout waiting for AI response.")
-            Logger.e("Agent", "Total timeout waiting for AI response.")
             updateStatus("")
             isRunning = false
             return
@@ -328,25 +330,19 @@ class AgentActivity : Activity() {
             (function() {
                 try {
                     window.scrollTo(0, document.body.scrollHeight);
-                    
                     var markdowns = document.querySelectorAll('.ds-markdown');
                     if (markdowns.length === 0) {
                         return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, progress: -1 });
                     }
                     
                     var lastMd = markdowns[markdowns.length - 1];
-                    
                     if (lastMd.getAttribute('data-processed') === 'true') {
                          return JSON.stringify({ isGenerating: false, hasCode: false, taskComplete: false, alreadyProcessed: true, progress: -1 });
                     }
 
                     var text = lastMd.innerText || lastMd.textContent || "";
-                    
-                    // استخراج درصد پیشرفت
                     var progressMatch = text.match(/\[PROGRESS:\s*(\d+)%\]/i);
                     var progressVal = progressMatch ? parseInt(progressMatch[1], 10) : -1;
-                    
-                    // حذف تگ پیشرفت از متن قبل از بررسی TASK_COMPLETE
                     var textClean = text.replace(/\[PROGRESS:\s*\d+%\]/gi, "").trim();
                     
                     if (textClean.includes("TASK_COMPLETE")) {
@@ -379,10 +375,10 @@ class AgentActivity : Activity() {
                         AndroidBridge.saveAgentCode(codeText);
                     }
 
-                    return JSON.stringify({ isGenerating: isGenerating, hasCode: hasCode, taskComplete: false, alreadyProcessed: false, progress: progressVal });
+                    return JSON.stringify({ isGenerating: isGenerating, hasCode: hasCode, taskComplete: false, alreadyProcessed: false, progress: progressVal, aiText: textClean });
 
                 } catch(e) {
-                    return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, jsError: String(e), progress: -1 });
+                    return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, jsError: String(e), progress: -1, aiText: "" });
                 }
             })();
         """.trimIndent()
@@ -404,17 +400,17 @@ class AgentActivity : Activity() {
                 val taskComplete = jsonObj.optBoolean("taskComplete", false)
                 val alreadyProcessed = jsonObj.optBoolean("alreadyProcessed", false)
                 val progress = jsonObj.optInt("progress", -1)
+                val aiText = jsonObj.optString("aiText", "")
                 
                 if (taskComplete) {
                     log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.")
                     updateStatus("")
                     updateProgress(100)
-                    Logger.i("Agent", "Task Complete received from AI.")
+                    saveMessageToChat("ai", "TASK_COMPLETE")
                     isRunning = false
                     return@evaluateJavascript
                 }
 
-                // اگر درصد پیشرفت جدیدی دریافت شد، آپدیت کن
                 if (progress >= 0) {
                     updateProgress(progress)
                 }
@@ -435,7 +431,7 @@ class AgentActivity : Activity() {
                     
                     if (text.isNotEmpty()) {
                         log("📥 AI response received. (${text.length} chars)")
-                        Logger.i("Agent", "AI Code received from buffer file: ${text.take(50)}...")
+                        saveMessageToChat("ai", text) // ذخیره پاسخ هوش مصنوعی
                         aiCheckAttempts = 0
                         processAiResponse(text)
                     }
@@ -511,6 +507,8 @@ class AgentActivity : Activity() {
                     runOnUiThread {
                         updateStatus("") 
                         log("\n📄 Output:\n$finalOutput\n")
+                        saveMessageToChat("terminal_output", finalOutput) // ذخیره خروجی ترمینال
+                        
                         val nextPrompt = "Command Output:\n$finalOutput\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
                         sendToAI(nextPrompt)
                         handler.postDelayed({ checkAiResponse() }, 3000)
