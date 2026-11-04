@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.view.View
 import android.view.ViewGroup
+import java.io.File
 import android.widget.*
 
 class FileManagerActivity : Activity() {
