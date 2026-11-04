@@ -25,12 +25,12 @@ class MainActivity : Activity() {
     private lateinit var btnTerminal: Button
     private lateinit var btnReload: Button
     private lateinit var btnAgent: Button
+    private lateinit var btnFiles: Button
     private var isAiWatcherRunning = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Logger.i("Browser", "onCreate() called")
-
         setContentView(R.layout.activity_browser)
 
         webView = findViewById(R.id.webview)
@@ -38,10 +38,10 @@ class MainActivity : Activity() {
         btnTerminal = findViewById(R.id.btn_terminal)
         btnReload = findViewById(R.id.btn_reload)
         btnAgent = findViewById(R.id.btn_agent)
+        btnFiles = findViewById(R.id.btn_files)
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        
         webView.addJavascriptInterface(WebAppInterface(this, webView), "AndroidBridge")
 
         webView.webViewClient = object : WebViewClient() {
@@ -53,25 +53,17 @@ class MainActivity : Activity() {
 
         urlBar.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN) {
-                loadUrlOrSearch(urlBar.text.toString().trim())
-                return@setOnKeyListener true
-            }
-            false
+                loadUrlOrSearch(urlBar.text.toString().trim()); true
+            } else false
         }
 
-        btnAgent.setOnClickListener {
-            startActivity(Intent(this, AgentActivity::class.java))
-        }
-
-        btnTerminal.setOnClickListener {
-            startActivity(Intent(this, TerminalActivity::class.java))
-        }
-
+        btnAgent.setOnClickListener { startActivity(Intent(this, AgentActivity::class.java)) }
+        btnTerminal.setOnClickListener { startActivity(Intent(this, TerminalActivity::class.java)) }
+        btnFiles.setOnClickListener { startActivity(Intent(this, FileManagerActivity::class.java)) }
         btnReload.setOnClickListener { webView.reload() }
 
         webView.loadUrl("https://chat.deepseek.com/")
         requestStoragePermission()
-        
         startAiWatcher()
     }
 
@@ -80,32 +72,20 @@ class MainActivity : Activity() {
         Thread {
             while (isAiWatcherRunning) {
                 if (reqFile.exists()) {
-                    // ✅ حذف کاراکترهای اضافی (Newline) قبل از دیکد کردن
                     val base64Prompt = reqFile.readText().trim()
                     val prompt = try {
-                        // ✅ استفاده از android.util.Base64 برای سازگاری بیشتر
                         String(android.util.Base64.decode(base64Prompt, android.util.Base64.NO_WRAP))
-                    } catch (e: Exception) {
-                        base64Prompt
-                    }
+                    } catch (e: Exception) { base64Prompt }
                     reqFile.delete()
-                    runOnUiThread {
-                        executeAiPrompt(prompt)
-                    }
+                    runOnUiThread { executeAiPrompt(prompt) }
                 }
-                try {
-                    Thread.sleep(500)
-                } catch (e: InterruptedException) {
-                    break
-                }
+                try { Thread.sleep(500) } catch (e: InterruptedException) { break }
             }
         }.start()
     }
 
     private fun executeAiPrompt(prompt: String) {
-        // پاکسازی کاراکترهای خاص برای جلوگیری از خطای سینتکس در جاوااسکریپت
         val safePrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
-        
         val js = """
             (function() {
                 var ta = document.querySelector('textarea');
@@ -113,27 +93,20 @@ class MainActivity : Activity() {
                     AndroidBridge.onAiError("Textarea not found. Are you logged in and on the chat page?");
                     return;
                 }
-                
                 ta.focus();
                 document.execCommand('selectAll', false, null);
                 document.execCommand('insertText', false, "$safePrompt");
-                
                 setTimeout(function() {
                     ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-                    
                     var buttons = document.querySelectorAll('button, div[role="button"]');
                     for (var i = buttons.length - 1; i >= 0; i--) {
                         var btn = buttons[i];
                         if (btn.querySelector('svg') && btn.offsetWidth > 0) {
                             var rect = btn.getBoundingClientRect();
                             var taRect = ta.getBoundingClientRect();
-                            if (rect.left > taRect.left + (taRect.width / 2)) {
-                                btn.click();
-                                break;
-                            }
+                            if (rect.left > taRect.left + (taRect.width / 2)) { btn.click(); break; }
                         }
                     }
-
                     var lastText = "";
                     var stableCount = 0;
                     var attempts = 0;
@@ -144,7 +117,6 @@ class MainActivity : Activity() {
                             var clone = msgs[msgs.length - 1].cloneNode(true);
                             var btns = clone.querySelectorAll('button, .ds-icon-button');
                             for(var j=0; j<btns.length; j++) { btns[j].remove(); }
-                            
                             var currentText = clone.innerText;
                             if (currentText === lastText && currentText.length > 0) {
                                 stableCount++;
@@ -152,29 +124,18 @@ class MainActivity : Activity() {
                                     clearInterval(interval);
                                     AndroidBridge.onAiResponse(currentText);
                                 }
-                            } else {
-                                stableCount = 0;
-                                lastText = currentText;
-                            }
+                            } else { stableCount = 0; lastText = currentText; }
                         }
-                        // افزایش تایم‌اوت به ۵ دقیقه (600 * 0.5)
-                        if (attempts > 600) { 
-                            clearInterval(interval);
-                            AndroidBridge.onAiError("Timeout waiting for AI response");
-                        }
+                        if (attempts > 600) { clearInterval(interval); AndroidBridge.onAiError("Timeout waiting for AI response"); }
                     }, 500);
                 }, 500);
             })();
         """.trimIndent()
-        
         webView.evaluateJavascript(js, null)
         Toast.makeText(this, "سوال به هوش مصنوعی ارسال شد...", Toast.LENGTH_SHORT).show()
     }
 
-    override fun onDestroy() {
-        isAiWatcherRunning = false
-        super.onDestroy()
-    }
+    override fun onDestroy() { isAiWatcherRunning = false; super.onDestroy() }
 
     private fun requestStoragePermission() {
         try {
@@ -189,20 +150,15 @@ class MainActivity : Activity() {
                     requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 100)
                 }
             }
-        } catch (e: Exception) {
-            Logger.e("Browser", "requestStoragePermission failed", e)
-        }
+        } catch (e: Exception) { Logger.e("Browser", "requestStoragePermission failed", e) }
     }
 
     private fun loadUrlOrSearch(input: String) {
         if (input.isEmpty()) return
         var url = input
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            url = if (url.contains(".") && !url.contains(" ")) {
-                "https://$url"
-            } else {
-                "https://www.google.com/search?q=" + Uri.encode(url)
-            }
+            url = if (url.contains(".") && !url.contains(" ")) "https://$url"
+            else "https://www.google.com/search?q=" + Uri.encode(url)
         }
         webView.loadUrl(url)
     }

@@ -26,7 +26,7 @@
         android:supportsRtl="true"
         android:allowBackup="false">
         <meta-data android:name="android.webkit.WebView.EnableSafeBrowsing" android:value="true" />
-        
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -53,7 +53,7 @@
                 <data android:scheme="https" android:mimeType="text/html" />
             </intent-filter>
         </activity>
-        
+
         <activity
             android:name=".TerminalActivity"
             android:exported="false"
@@ -64,11 +64,24 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- ✅ ثبت کردن ChatHistoryActivity -->
         <activity
             android:name=".ChatHistoryActivity"
             android:exported="false"
             android:label="Chat History" />
-            
+
+        <activity
+            android:name=".FileManagerActivity"
+            android:exported="false"
+            android:label="File Manager" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="8dp"
+        android:padding="6dp"
         android:background="#F1F3F4"
         android:gravity="center_vertical">
 
@@ -18,21 +18,35 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:hint="Search or type URL"
+            android:hint="Search or URL"
             android:inputType="textUri"
             android:imeOptions="actionGo"
             android:singleLine="true"
             android:background="#FFFFFF"
-            android:padding="10dp" />
+            android:padding="8dp"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btn_files"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="3dp"
+            android:text="📁"
+            android:textSize="14sp"
+            android:minWidth="42dp"
+            android:paddingHorizontal="6dp"
+            android:backgroundTint="#FF9800"
+            android:textColor="#FFFFFF" />
 
         <Button
             android:id="@+id/btn_agent"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:text="🤖 AI"
-            android:textSize="12sp"
-            android:minWidth="48dp"
+            android:layout_marginStart="3dp"
+            android:text="🤖"
+            android:textSize="14sp"
+            android:minWidth="42dp"
+            android:paddingHorizontal="6dp"
             android:backgroundTint="#4CAF50"
             android:textColor="#FFFFFF" />
 
@@ -40,23 +54,22 @@
             android:id="@+id/btn_terminal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="3dp"
             android:text=">_"
-            android:textSize="16sp"
+            android:textSize="14sp"
             android:textStyle="bold"
-            android:minWidth="48dp"
-            android:paddingHorizontal="12dp" />
+            android:minWidth="42dp"
+            android:paddingHorizontal="6dp" />
 
         <Button
             android:id="@+id/btn_reload"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="3dp"
             android:text="↻"
-            android:textSize="18sp"
-            android:minWidth="48dp"
-            android:paddingHorizontal="12dp" />
-
+            android:textSize="16sp"
+            android:minWidth="42dp"
+            android:paddingHorizontal="6dp" />
     </LinearLayout>
 
     <WebView
@@ -64,5 +77,4 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1" />
-
 </LinearLayout>
