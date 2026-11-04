@@ -168,13 +168,12 @@ class AgentActivity : Activity() {
                 tvStatus.visibility = View.VISIBLE
                 tvStatus.text = "⏳ $status"
                 
-                // تغییر رنگ بر اساس نوع نصب
                 if (status.contains("[LOCAL INSTALL]")) {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")) // سبز برای لوکال
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")) // Green
                 } else if (status.contains("[INTERNET INSTALL]")) {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#FF9800")) // نارنجی برای اینترنت
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#FF9800")) // Orange
                 } else {
-                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3")) // آبی پیش‌فرض
+                    tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3")) // Blue
                 }
             }
         }
@@ -189,7 +188,7 @@ class AgentActivity : Activity() {
         
         ensureTerminalSession()
 
-        // ✅ پرامپت سیستم با پیام‌های انگلیسی و استاندارد
+        // ✅ پرامپت بسیار دقیق: فقط پکیج مورد نیاز را بررسی می‌کند، از لوکال نصب می‌کند اگر نبود از اینترنت و ذخیره می‌کند.
         val systemPrompt = """
             [INSTRUCTIONS]
             You are an Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
@@ -197,27 +196,34 @@ class AgentActivity : Activity() {
             You are running as root.
             
             [SMART PACKAGE INSTALLATION]
-            You have access to a local package cache mounted at: /root/Local_AI_Models/Library_Cache/apk/
-            When you need to install a package with 'apk add', ALWAYS use this smart logic in your bash script:
+            You have a local cache at /root/Local_AI_Models/Library_Cache/
+            If you need to install an 'apk' package, YOU MUST use this exact logic:
             
-            PACKAGE_NAME="htop"
+            PACKAGE="package_name"
             CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
-            LOCAL_PKGS=""
-            for pkg in ${'$'}CACHE_DIR/${'$'}PACKAGE_NAME-*.apk; do
-                if [ -f "${'$'}pkg" ]; then LOCAL_PKGS="${'$'}LOCAL_PKGS ${'$'}pkg"; fi
-            done
-            
-            if [ ! -z "${'$'}LOCAL_PKGS" ]; then
-                echo "[LOCAL INSTALL] Installing ${'$'}PACKAGE_NAME from local cache..."
-                apk add --no-cache --allow-untrusted ${'$'}LOCAL_PKGS
+            if ls ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk 1> /dev/null 2>&1; then
+                echo "[LOCAL INSTALL] Installing ${'$'}PACKAGE from local cache..."
+                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk || { echo "[FALLBACK] Local failed, trying internet..."; apk add --no-cache ${'$'}PACKAGE; cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null; }
             else
-                echo "[INTERNET INSTALL] Installing ${'$'}PACKAGE_NAME from internet..."
-                apk add --no-cache ${'$'}PACKAGE_NAME
-                echo "[CACHE SAVE] Saving downloaded .apk to local cache..."
-                cp /var/cache/apk/*${'$'}PACKAGE_NAME*.apk ${'$'}CACHE_DIR/ 2>/dev/null || true
+                echo "[INTERNET INSTALL] Installing ${'$'}PACKAGE from internet..."
+                apk add --no-cache ${'$'}PACKAGE
+                echo "[CACHE SAVE] Saving ${'$'}PACKAGE to local cache..."
+                cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null || true
             fi
             
-            (Note: If a package needs dependencies like libcurl, install dependencies from INTERNET first, then the main package from LOCAL CACHE).
+            If you need to install a 'pip' package, YOU MUST use this exact logic:
+            
+            PACKAGE="package_name"
+            CACHE_DIR="/root/Local_AI_Models/Library_Cache/pip"
+            if ls ${'$'}CACHE_DIR | grep -q "^${'$'}PACKAGE-"; then
+                echo "[LOCAL INSTALL] Installing ${'$'}PACKAGE from local pip cache..."
+                pip install --no-index --find-links=${'$'}CACHE_DIR ${'$'}PACKAGE || { echo "[FALLBACK] Local pip failed, trying internet..."; pip install ${'$'}PACKAGE; pip download ${'$'}PACKAGE -d ${'$'}CACHE_DIR > /dev/null 2>&1; }
+            else
+                echo "[INTERNET INSTALL] Installing ${'$'}PACKAGE from internet..."
+                pip install ${'$'}PACKAGE
+                echo "[CACHE SAVE] Saving ${'$'}PACKAGE to local pip cache..."
+                pip download ${'$'}PACKAGE -d ${'$'}CACHE_DIR > /dev/null 2>&1 || true
+            fi
             
             [TASK]
             $prompt
@@ -469,10 +475,10 @@ class AgentActivity : Activity() {
                 val lines = screenText.trim().lines()
                 if (lines.isNotEmpty()) {
                     val lastLine = lines.last().replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "").trim()
-                    // ✅ بررسی دقیق برای پیام‌های نصب لوکال یا اینترنت
+                    // ✅ تشخیص دقیق پیام‌های نصب برای تغییر رنگ نوار وضعیت
                     if (lastLine.contains("[LOCAL INSTALL]") || lastLine.contains("[INTERNET INSTALL]") || 
-                        lastLine.contains("[CACHE SAVE]") || lastLine.contains("%") || 
-                        (lastLine.isNotEmpty() && lastLine.length < 100)) {
+                        lastLine.contains("[CACHE SAVE]") || lastLine.contains("[FALLBACK]") ||
+                        lastLine.contains("%") || (lastLine.isNotEmpty() && lastLine.length < 100)) {
                         runOnUiThread { updateStatus(lastLine) }
                     }
                 }
