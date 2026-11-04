@@ -191,7 +191,6 @@ class AgentActivity : Activity() {
         }
     }
 
-    // Keep WebView alive in the background
     override fun onPause() {
         super.onPause()
         webView.onResume()
@@ -325,9 +324,9 @@ class AgentActivity : Activity() {
             [PROGRESS: X%]
 
             [PERSISTENT MEMORY]
-            For long complex tasks, if you learn a critical fact (paths, configs, requirements, libraries installed), you may include it OUTSIDE the code block like:
+            For long complex tasks, if you learn a critical fact, you may include it OUTSIDE the code block like:
             [NOTE: your important fact here]
-            These notes are saved and will be shown to you in future prompts. Use them wisely to avoid re-learning the same things.
+            These notes are saved and will be shown to you in future prompts. Use them wisely.
 
             [SMART PACKAGE INSTALLATION]
             You have a local cache at /root/Local_AI_Models/Library_Cache/
@@ -352,6 +351,8 @@ class AgentActivity : Activity() {
     private fun sendToAI(text: String) {
         log("📤 Sending prompt to AI...", Color.BLUE)
         val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        
+        // AUTO-CLICKER: If text is not sent, retry clicking the send button automatically
         val js = """
             (function() {
                 try {
@@ -365,18 +366,40 @@ class AgentActivity : Activity() {
                         } else { ta.innerText = text; }
                         ta.dispatchEvent(new Event('input', { bubbles: true }));
                         ta.dispatchEvent(new Event('change', { bubbles: true }));
-                        setTimeout(function() {
+                        
+                        var clickAttempts = 0;
+                        var maxAttempts = 3;
+                        
+                        function trySend() {
+                            clickAttempts++;
+                            // Dispatch Enter key
                             ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+                            
+                            // Find and click the orange send button
                             var buttons = document.querySelectorAll('button, div[role="button"]');
                             for (var i = buttons.length - 1; i >= 0; i--) {
                                 var btn = buttons[i];
                                 if (btn.innerHTML.includes('svg') && btn.offsetWidth > 0) {
                                     var rect = btn.getBoundingClientRect();
                                     var taRect = ta.getBoundingClientRect();
-                                    if (rect.left > taRect.left + (taRect.width / 2) && rect.top > taRect.top) { btn.click(); break; }
+                                    if (rect.left > taRect.left + (taRect.width / 2) && rect.top > taRect.top) {
+                                        btn.removeAttribute('disabled'); // Force enable just in case
+                                        btn.click();
+                                        break;
+                                    }
                                 }
                             }
-                        }, 500);
+                            
+                            // If textarea is still not empty after 1.5s, try again
+                            setTimeout(function() {
+                                var currentText = ta.value || ta.innerText || "";
+                                if (currentText.trim().length > 0 && clickAttempts < maxAttempts) {
+                                    trySend();
+                                }
+                            }, 1500);
+                        }
+                        
+                        setTimeout(trySend, 500);
                     }
                 } catch(e) { AndroidBridge.onAgentError("JS Exception: " + e.message); }
             })();
@@ -385,12 +408,13 @@ class AgentActivity : Activity() {
     }
 
     private var aiCheckAttempts = 0
+    private var lastAiText = ""
 
     private fun checkAiResponse() {
         if (!isRunning) return
         aiCheckAttempts++
-        // ✅ افزایش زمان انتظار به 5 دقیقه (600 * 500ms)
-        if (aiCheckAttempts > 600) {
+        // Increased timeout to 10 minutes (1200 * 500ms)
+        if (aiCheckAttempts > 1200) {
             log("❌ Error: Total timeout waiting for AI response.", Color.RED)
             updateStatus(""); stopAgent(); return
         }
@@ -448,6 +472,25 @@ class AgentActivity : Activity() {
                 val progress = jsonObj.optInt("progress", -1)
                 val aiText = jsonObj.optString("aiText", "")
 
+                // AUTO-NUDGE: If stuck for a long time without progress, try re-sending the last prompt or clicking the send button
+                if (aiCheckAttempts > 120 && aiText == lastAiText && !hasCode && !isGenerating) {
+                    log("⏳ AI seems stuck. Trying to auto-resume...", Color.YELLOW)
+                    // JS to click the send/regenerate button if it exists
+                    val nudgeJs = """
+                        (function() {
+                            var buttons = document.querySelectorAll('button');
+                            for (var i = 0; i < buttons.length; i++) {
+                                if (buttons[i].innerText.includes('Regenerate') || buttons[i].innerText.includes('Continue')) {
+                                    buttons[i].click(); return;
+                                }
+                            }
+                        })();
+                    """.trimIndent()
+                    webView.evaluateJavascript(nudgeJs, null)
+                    aiCheckAttempts = 0 // reset attempts so it doesn't spam
+                }
+                if (aiText.isNotEmpty()) lastAiText = aiText
+
                 if (taskComplete) {
                     log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.", Color.GREEN)
                     updateStatus(""); updateProgress(100)
@@ -501,7 +544,6 @@ class AgentActivity : Activity() {
 
     private fun readTerminalOutput(startMarker: String, endMarker: String, attempts: Int) {
         if (!isRunning) return
-        // ✅ افزایش زمان انتظار به 5 دقیقه (600 * 500ms)
         if (attempts > 600) {
             log("❌ Error: Command execution timed out.", Color.RED)
             updateStatus(""); stopAgent(); return
