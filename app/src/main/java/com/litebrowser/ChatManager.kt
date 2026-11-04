@@ -9,7 +9,7 @@ import java.util.Date
 import java.util.Locale
 
 data class ChatMessage(
-    val role: String, // "user", "ai", "system"
+    val role: String,
     val content: String,
     val timestamp: Long = System.currentTimeMillis()
 )
@@ -23,7 +23,6 @@ object ChatManager {
 
     fun sanitizeFileName(input: String): String {
         var clean = input.replace("\n", " ").replace("\r", "")
-        // فقط حروف انگلیسی، اعداد و کاراکترهای مجاز را نگه می‌داریم
         clean = clean.replace(Regex("[^a-zA-Z0-9_\\-\\u0600-\\u06FF]"), "_")
         if (clean.length > 40) clean = clean.substring(0, 40)
         return clean.trim('_')
@@ -38,7 +37,6 @@ object ChatManager {
         val chatFolder = File(baseDir, folderName)
         if (!chatFolder.exists()) chatFolder.mkdirs()
         
-        // ایجاد یک فایل خالی برای شروع
         saveChatHistory(chatFolder, emptyList())
         return chatFolder
     }
