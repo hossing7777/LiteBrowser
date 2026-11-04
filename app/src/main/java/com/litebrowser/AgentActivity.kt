@@ -11,6 +11,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
@@ -27,6 +28,12 @@ class AgentActivity : Activity() {
     private lateinit var tvStatus: TextView
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
+
+    // ✅ متغیرهای مربوط به نوار پیشرفت پروژه
+    private lateinit var layoutProgress: LinearLayout
+    private lateinit var pbTaskProgress: ProgressBar
+    private lateinit var tvProgressPercent: TextView
+
     private val handler = Handler(Looper.getMainLooper())
     private var isRunning = false
     private var isPageLoaded = false
@@ -46,6 +53,10 @@ class AgentActivity : Activity() {
         tvStatus = findViewById(R.id.tv_agent_status)
         webView = findViewById(R.id.agent_webview)
         progressBar = findViewById(R.id.agent_progress)
+
+        layoutProgress = findViewById(R.id.layout_progress)
+        pbTaskProgress = findViewById(R.id.pb_task_progress)
+        tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
         val params = webView.layoutParams
         params.height = 1200
@@ -168,7 +179,6 @@ class AgentActivity : Activity() {
                 tvStatus.visibility = View.VISIBLE
                 tvStatus.text = "⏳ $status"
                 
-                // ✅ تغییر رنگ نوار وضعیت بر اساس پیام‌های جدید
                 if (status.contains("[Local Cache]")) {
                     tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50")) // Green
                 } else if (status.contains("[Internet]")) {
@@ -180,21 +190,42 @@ class AgentActivity : Activity() {
         }
     }
 
+    // ✅ متد جدید برای آپدیت درصد پیشرفت
+    private fun updateProgress(percent: Int) {
+        runOnUiThread {
+            layoutProgress.visibility = View.VISIBLE
+            pbTaskProgress.progress = percent
+            tvProgressPercent.text = "$percent%"
+            
+            if (percent == 100) {
+                tvProgressPercent.setTextColor(android.graphics.Color.parseColor("#4CAF50")) // Green for 100%
+            } else {
+                tvProgressPercent.setTextColor(android.graphics.Color.parseColor("#2196F3")) // Blue
+            }
+        }
+    }
+
     private fun startAgent(prompt: String) {
         isRunning = true
         logBuilder.clear()
         updateStatus("")
+        updateProgress(0) // ریست کردن نوار پیشرفت
         log("🤖 Starting Agent with task: $prompt\n")
         Logger.i("Agent", "startAgent called: $prompt")
         
         ensureTerminalSession()
 
-        // ✅ پرامپت سیستم آپدیت شد تا از کدهای رنگی ANSI و آیکون استفاده کند
+        // ✅ پرامپت سیستم آپدیت شد تا درصد پیشرفت و chmod را رعایت کند
         val systemPrompt = """
             [INSTRUCTIONS]
             You are an Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
             Do NOT explain anything. Do NOT repeat these instructions. Do NOT use markdown outside the code block.
             You are running as root.
+            
+            [PROGRESS REPORTING]
+            After completing a major step of the task, you MUST include a progress indicator on a new line at the very end of your response (OUTSIDE the code block). Format it exactly as:
+            [PROGRESS: X%]
+            (Replace X with your estimated percentage of completion from 0 to 100. E.g., [PROGRESS: 50%])
             
             [SMART PACKAGE INSTALLATION]
             You have a local cache at /root/Local_AI_Models/Library_Cache/
@@ -300,20 +331,27 @@ class AgentActivity : Activity() {
                     
                     var markdowns = document.querySelectorAll('.ds-markdown');
                     if (markdowns.length === 0) {
-                        return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false });
+                        return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, progress: -1 });
                     }
                     
                     var lastMd = markdowns[markdowns.length - 1];
                     
                     if (lastMd.getAttribute('data-processed') === 'true') {
-                         return JSON.stringify({ isGenerating: false, hasCode: false, taskComplete: false, alreadyProcessed: true });
+                         return JSON.stringify({ isGenerating: false, hasCode: false, taskComplete: false, alreadyProcessed: true, progress: -1 });
                     }
 
                     var text = lastMd.innerText || lastMd.textContent || "";
                     
-                    if (text.includes("TASK_COMPLETE")) {
+                    // استخراج درصد پیشرفت
+                    var progressMatch = text.match(/\[PROGRESS:\s*(\d+)%\]/i);
+                    var progressVal = progressMatch ? parseInt(progressMatch[1], 10) : -1;
+                    
+                    // حذف تگ پیشرفت از متن قبل از بررسی TASK_COMPLETE
+                    var textClean = text.replace(/\[PROGRESS:\s*\d+%\]/gi, "").trim();
+                    
+                    if (textClean.includes("TASK_COMPLETE")) {
                         lastMd.setAttribute('data-processed', 'true');
-                        return JSON.stringify({ isGenerating: false, hasCode: false, taskComplete: true, alreadyProcessed: false });
+                        return JSON.stringify({ isGenerating: false, hasCode: false, taskComplete: true, alreadyProcessed: false, progress: 100 });
                     }
 
                     var codeText = "";
@@ -324,7 +362,7 @@ class AgentActivity : Activity() {
                         codeText = codeText.replace(/^Copy\s*\n?/i, "").replace(/^Download\s*\n?/i, "").replace(/^bash\s*\n?/i, "").trim();
                         hasCode = true;
                     } else {
-                        var match = text.match(/```(?:bash|sh|shell)?\s*([\s\S]*?)```/);
+                        var match = textClean.match(/```(?:bash|sh|shell)?\s*([\s\S]*?)```/);
                         if (match) {
                             codeText = match[1].trim();
                             hasCode = true;
@@ -332,7 +370,7 @@ class AgentActivity : Activity() {
                     }
 
                     var isGenerating = false;
-                    if (text.endsWith("●") || text.endsWith("▍") || text.endsWith("_")) {
+                    if (textClean.endsWith("●") || textClean.endsWith("▍") || textClean.endsWith("_")) {
                         isGenerating = true;
                     }
 
@@ -341,10 +379,10 @@ class AgentActivity : Activity() {
                         AndroidBridge.saveAgentCode(codeText);
                     }
 
-                    return JSON.stringify({ isGenerating: isGenerating, hasCode: hasCode, taskComplete: false, alreadyProcessed: false });
+                    return JSON.stringify({ isGenerating: isGenerating, hasCode: hasCode, taskComplete: false, alreadyProcessed: false, progress: progressVal });
 
                 } catch(e) {
-                    return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, jsError: String(e) });
+                    return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, jsError: String(e), progress: -1 });
                 }
             })();
         """.trimIndent()
@@ -365,13 +403,20 @@ class AgentActivity : Activity() {
                 val isGenerating = jsonObj.getBoolean("isGenerating")
                 val taskComplete = jsonObj.optBoolean("taskComplete", false)
                 val alreadyProcessed = jsonObj.optBoolean("alreadyProcessed", false)
+                val progress = jsonObj.optInt("progress", -1)
                 
                 if (taskComplete) {
                     log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.")
                     updateStatus("")
+                    updateProgress(100)
                     Logger.i("Agent", "Task Complete received from AI.")
                     isRunning = false
                     return@evaluateJavascript
+                }
+
+                // اگر درصد پیشرفت جدیدی دریافت شد، آپدیت کن
+                if (progress >= 0) {
+                    updateProgress(progress)
                 }
 
                 if (alreadyProcessed) {
@@ -476,7 +521,6 @@ class AgentActivity : Activity() {
                 val lines = screenText.trim().lines()
                 if (lines.isNotEmpty()) {
                     val lastLine = lines.last().replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "").trim()
-                    // ✅ بررسی کلمات کلیدی جدید برای آپدیت نوار وضعیت
                     if (lastLine.contains("[Local Cache]") || lastLine.contains("[Internet]") || 
                         lastLine.contains("[Saving]") || lastLine.contains("%") || 
                         (lastLine.isNotEmpty() && lastLine.length < 100)) {
