@@ -1,8 +1,11 @@
 package com.litebrowser
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -47,7 +50,6 @@ class AgentActivity : Activity() {
     private val agentCodeFile by lazy { File(filesDir, "home/agent_code.txt") }
     private val agentMemoryFile by lazy { File(filesDir, "home/agent_memory.txt") }
 
-    // MEMORY SYSTEM
     private val recentSteps = mutableListOf<Pair<String, String>>()
     private val aiNotes = mutableListOf<String>()
     private var originalTask: String = ""
@@ -73,6 +75,8 @@ class AgentActivity : Activity() {
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
+        requestNotificationPermission()
+
         handler.postDelayed({
             setupWebView()
             webView.loadUrl("https://chat.deepseek.com/")
@@ -97,6 +101,14 @@ class AgentActivity : Activity() {
         }
 
         btnStop.setOnClickListener { stopAgent() }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
     }
 
     private fun stopAgent() {
@@ -326,19 +338,7 @@ class AgentActivity : Activity() {
             [PERSISTENT MEMORY]
             For long complex tasks, if you learn a critical fact, you may include it OUTSIDE the code block like:
             [NOTE: your important fact here]
-            These notes are saved and will be shown to you in future prompts. Use them wisely.
-
-            [SMART PACKAGE INSTALLATION]
-            You have a local cache at /root/Local_AI_Models/Library_Cache/
-            If you need to install an 'apk' package, use this logic:
-            PACKAGE="package_name"
-            CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
-            if ls ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk 1> /dev/null 2>&1; then
-                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk || { apk add --no-cache ${'$'}PACKAGE; cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null; }
-            else
-                apk add --no-cache ${'$'}PACKAGE
-                cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null || true
-            fi
+            These notes are saved and will be shown to you in future prompts.
 
             [TASK]
             $prompt
@@ -352,7 +352,7 @@ class AgentActivity : Activity() {
         log("📤 Sending prompt to AI...", Color.BLUE)
         val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         
-        // AUTO-CLICKER: If text is not sent, retry clicking the send button automatically
+        // Auto-clicker with delay to avoid rate limits
         val js = """
             (function() {
                 try {
@@ -372,10 +372,13 @@ class AgentActivity : Activity() {
                         
                         function trySend() {
                             clickAttempts++;
-                            // Dispatch Enter key
+                            // Check if there's a rate limit warning on screen
+                            if (document.body.innerText.includes("Messages are too frequent") || document.body.innerText.includes("پیام‌ها خیلی زیاد")) {
+                                return; // Let Kotlin handle the rate limit
+                            }
+
                             ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
                             
-                            // Find and click the orange send button
                             var buttons = document.querySelectorAll('button, div[role="button"]');
                             for (var i = buttons.length - 1; i >= 0; i--) {
                                 var btn = buttons[i];
@@ -383,23 +386,23 @@ class AgentActivity : Activity() {
                                     var rect = btn.getBoundingClientRect();
                                     var taRect = ta.getBoundingClientRect();
                                     if (rect.left > taRect.left + (taRect.width / 2) && rect.top > taRect.top) {
-                                        btn.removeAttribute('disabled'); // Force enable just in case
+                                        btn.removeAttribute('disabled');
                                         btn.click();
                                         break;
                                     }
                                 }
                             }
                             
-                            // If textarea is still not empty after 1.5s, try again
                             setTimeout(function() {
                                 var currentText = ta.value || ta.innerText || "";
                                 if (currentText.trim().length > 0 && clickAttempts < maxAttempts) {
                                     trySend();
                                 }
-                            }, 1500);
+                            }, 2000);
                         }
                         
-                        setTimeout(trySend, 500);
+                        // Wait 3 seconds before clicking to let DeepSeek process the input
+                        setTimeout(trySend, 3000);
                     }
                 } catch(e) { AndroidBridge.onAgentError("JS Exception: " + e.message); }
             })();
@@ -413,8 +416,8 @@ class AgentActivity : Activity() {
     private fun checkAiResponse() {
         if (!isRunning) return
         aiCheckAttempts++
-        // Increased timeout to 10 minutes (1200 * 500ms)
-        if (aiCheckAttempts > 1200) {
+        
+        if (aiCheckAttempts > 1200) { // 10 minutes max
             log("❌ Error: Total timeout waiting for AI response.", Color.RED)
             updateStatus(""); stopAgent(); return
         }
@@ -423,6 +426,12 @@ class AgentActivity : Activity() {
             (function() {
                 try {
                     window.scrollTo(0, document.body.scrollHeight);
+                    
+                    // Check for rate limit
+                    if (document.body.innerText.includes("Messages are too frequent") || document.body.innerText.includes("پیام‌ها خیلی زیاد")) {
+                        return JSON.stringify({ rateLimited: true });
+                    }
+
                     var markdowns = document.querySelectorAll('.ds-markdown');
                     if (markdowns.length === 0) return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, progress: -1, aiText: "" });
                     var lastMd = markdowns[markdowns.length - 1];
@@ -460,36 +469,31 @@ class AgentActivity : Activity() {
         webView.evaluateJavascript(js) { result ->
             if (!isRunning) return@evaluateJavascript
             if (result == null || result == "null" || result == "\"\"") {
-                handler.postDelayed({ checkAiResponse() }, 500); return@evaluateJavascript
+                handler.postDelayed({ checkAiResponse() }, 1000); return@evaluateJavascript
             }
             val cleanJson = result.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
             try {
                 val jsonObj = org.json.JSONObject(cleanJson)
+                
+                if (jsonObj.optBoolean("rateLimited", false)) {
+                    log("\n⚠️ Rate Limit hit! Waiting 30 seconds before auto-resuming...", Color.YELLOW)
+                    handler.postDelayed({ 
+                        if(isRunning) {
+                            // Just click the send button without typing text (to retry the prompt)
+                            val retryJs = "document.querySelector('button[type=\"submit\"]')?.click();"
+                            webView.evaluateJavascript(retryJs, null)
+                            handler.postDelayed({ checkAiResponse() }, 5000)
+                        }
+                    }, 30000)
+                    return@evaluateJavascript
+                }
+
                 val hasCode = jsonObj.getBoolean("hasCode")
                 val isGenerating = jsonObj.getBoolean("isGenerating")
                 val taskComplete = jsonObj.optBoolean("taskComplete", false)
                 val alreadyProcessed = jsonObj.optBoolean("alreadyProcessed", false)
                 val progress = jsonObj.optInt("progress", -1)
                 val aiText = jsonObj.optString("aiText", "")
-
-                // AUTO-NUDGE: If stuck for a long time without progress, try re-sending the last prompt or clicking the send button
-                if (aiCheckAttempts > 120 && aiText == lastAiText && !hasCode && !isGenerating) {
-                    log("⏳ AI seems stuck. Trying to auto-resume...", Color.YELLOW)
-                    // JS to click the send/regenerate button if it exists
-                    val nudgeJs = """
-                        (function() {
-                            var buttons = document.querySelectorAll('button');
-                            for (var i = 0; i < buttons.length; i++) {
-                                if (buttons[i].innerText.includes('Regenerate') || buttons[i].innerText.includes('Continue')) {
-                                    buttons[i].click(); return;
-                                }
-                            }
-                        })();
-                    """.trimIndent()
-                    webView.evaluateJavascript(nudgeJs, null)
-                    aiCheckAttempts = 0 // reset attempts so it doesn't spam
-                }
-                if (aiText.isNotEmpty()) lastAiText = aiText
 
                 if (taskComplete) {
                     log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.", Color.GREEN)
@@ -500,8 +504,8 @@ class AgentActivity : Activity() {
                     return@evaluateJavascript
                 }
                 if (progress >= 0) updateProgress(progress)
-                if (alreadyProcessed) { handler.postDelayed({ checkAiResponse() }, 500); return@evaluateJavascript }
-                if (!hasCode || isGenerating) { handler.postDelayed({ checkAiResponse() }, 500); return@evaluateJavascript }
+                if (alreadyProcessed) { handler.postDelayed({ checkAiResponse() }, 1000); return@evaluateJavascript }
+                if (!hasCode || isGenerating) { handler.postDelayed({ checkAiResponse() }, 1000); return@evaluateJavascript }
 
                 if (aiText.isNotEmpty()) extractAiNotes(aiText)
 
@@ -517,7 +521,7 @@ class AgentActivity : Activity() {
                 }
             } catch (e: Exception) {
                 Logger.e("Agent", "JSON parse error: ${e.message}")
-                handler.postDelayed({ checkAiResponse() }, 500)
+                handler.postDelayed({ checkAiResponse() }, 1000)
             }
         }
     }
@@ -579,8 +583,14 @@ class AgentActivity : Activity() {
 
                         val nextPrompt = buildMemoryContext() +
                             "\n[COMMAND OUTPUT TO ANALYZE]\n$finalOutput\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
-                        sendToAI(nextPrompt)
-                        handler.postDelayed({ checkAiResponse() }, 2000)
+                        
+                        // SMART THROTTLE: Wait 10 seconds before sending the next prompt to avoid Rate Limits
+                        log("⏳ Waiting 10s to avoid rate limit...", Color.GRAY)
+                        handler.postDelayed({
+                            if (isRunning) sendToAI(nextPrompt)
+                        }, 10000) // 10 seconds delay
+                        
+                        handler.postDelayed({ checkAiResponse() }, 15000)
                     }
                     return@thread
                 }
