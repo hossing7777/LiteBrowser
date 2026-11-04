@@ -75,6 +75,7 @@ class AgentActivity : Activity() {
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
+        // درخواست اجازه نوتیفیکیشن برای اجرا در پس‌زمینه (اندروید ۱۳+)
         requestNotificationPermission()
 
         handler.postDelayed({
@@ -327,7 +328,7 @@ class AgentActivity : Activity() {
 
         val systemPrompt = """
             [INSTRUCTIONS]
-            You are an Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
+            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
             Do NOT explain anything. Do NOT use markdown outside the code block.
             You are running as root.
 
@@ -336,9 +337,46 @@ class AgentActivity : Activity() {
             [PROGRESS: X%]
 
             [PERSISTENT MEMORY]
-            For long complex tasks, if you learn a critical fact, you may include it OUTSIDE the code block like:
+            If you learn a critical fact, you may include it OUTSIDE the code block like:
             [NOTE: your important fact here]
-            These notes are saved and will be shown to you in future prompts.
+
+            [ADVANCED CAPABILITIES - READ CAREFULLY]
+            You have access to powerful tools. You MUST install them if they are missing before using them.
+            
+            1. MUSIC/VIDEO DOWNLOADING:
+               - Tool: `yt-dlp`
+               - Install: `apk add yt-dlp`
+               - Usage: `yt-dlp -x --audio-format mp3 -o "/root/Download/%(title)s.%(ext)s" "URL"`
+               - For direct links (e.g., mp3 files from a website), use `wget -O "/root/Download/name.mp3" "URL"`.
+            
+            2. DOCUMENT GENERATION (PDF / WORD):
+               - First, write your research content into a Markdown file using `cat << 'EOF' > /root/Download/research.md ... EOF`.
+               - Tool for PDF: `pandoc` and `wkhtmltopdf`
+               - Install: `apk add pandoc wkhtmltopdf`
+               - Usage (PDF): `pandoc /root/Download/research.md -o "/root/Download/Output.pdf" --pdf-engine=wkhtmltopdf`
+               - Tool for Word (docx): `pandoc`
+               - Usage (Word): `pandoc /root/Download/research.md -o "/root/Download/Output.docx"`
+            
+            3. WEB RESEARCH & SCRAPING:
+               - If you need to search the web, use DeepSeek's built-in search feature in the chat UI if available.
+               - If you must use the terminal to fetch text, use `curl -s -L "URL" > /root/Download/page.html`.
+               - To extract text from HTML, install `lynx`: `apk add lynx && lynx -dump /root/Download/page.html > /root/Download/text.txt`.
+            
+            4. PYTHON SCRIPTING:
+               - For complex automation, write a Python script using `cat << 'PYEOF'`, then run `python3 script.py`.
+               - Install Python: `apk add python3 py3-pip`
+
+            [SMART PACKAGE INSTALLATION]
+            You have a local cache at /root/Local_AI_Models/Library_Cache/
+            If you need to install an 'apk' package, use this logic:
+            PACKAGE="package_name"
+            CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
+            if ls ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk 1> /dev/null 2>&1; then
+                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk || { apk add --no-cache ${'$'}PACKAGE; cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null; }
+            else
+                apk add --no-cache ${'$'}PACKAGE
+                cp /var/cache/apk/*${'$'}PACKAGE*.apk ${'$'}CACHE_DIR/ 2>/dev/null || true
+            fi
 
             [TASK]
             $prompt
@@ -352,7 +390,6 @@ class AgentActivity : Activity() {
         log("📤 Sending prompt to AI...", Color.BLUE)
         val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         
-        // Auto-clicker with delay to avoid rate limits
         val js = """
             (function() {
                 try {
@@ -372,9 +409,8 @@ class AgentActivity : Activity() {
                         
                         function trySend() {
                             clickAttempts++;
-                            // Check if there's a rate limit warning on screen
                             if (document.body.innerText.includes("Messages are too frequent") || document.body.innerText.includes("پیام‌ها خیلی زیاد")) {
-                                return; // Let Kotlin handle the rate limit
+                                return; 
                             }
 
                             ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
@@ -400,8 +436,6 @@ class AgentActivity : Activity() {
                                 }
                             }, 2000);
                         }
-                        
-                        // Wait 3 seconds before clicking to let DeepSeek process the input
                         setTimeout(trySend, 3000);
                     }
                 } catch(e) { AndroidBridge.onAgentError("JS Exception: " + e.message); }
@@ -417,7 +451,7 @@ class AgentActivity : Activity() {
         if (!isRunning) return
         aiCheckAttempts++
         
-        if (aiCheckAttempts > 1200) { // 10 minutes max
+        if (aiCheckAttempts > 1200) { 
             log("❌ Error: Total timeout waiting for AI response.", Color.RED)
             updateStatus(""); stopAgent(); return
         }
@@ -427,7 +461,6 @@ class AgentActivity : Activity() {
                 try {
                     window.scrollTo(0, document.body.scrollHeight);
                     
-                    // Check for rate limit
                     if (document.body.innerText.includes("Messages are too frequent") || document.body.innerText.includes("پیام‌ها خیلی زیاد")) {
                         return JSON.stringify({ rateLimited: true });
                     }
@@ -479,7 +512,6 @@ class AgentActivity : Activity() {
                     log("\n⚠️ Rate Limit hit! Waiting 30 seconds before auto-resuming...", Color.YELLOW)
                     handler.postDelayed({ 
                         if(isRunning) {
-                            // Just click the send button without typing text (to retry the prompt)
                             val retryJs = "document.querySelector('button[type=\"submit\"]')?.click();"
                             webView.evaluateJavascript(retryJs, null)
                             handler.postDelayed({ checkAiResponse() }, 5000)
@@ -584,11 +616,10 @@ class AgentActivity : Activity() {
                         val nextPrompt = buildMemoryContext() +
                             "\n[COMMAND OUTPUT TO ANALYZE]\n$finalOutput\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
                         
-                        // SMART THROTTLE: Wait 10 seconds before sending the next prompt to avoid Rate Limits
                         log("⏳ Waiting 10s to avoid rate limit...", Color.GRAY)
                         handler.postDelayed({
                             if (isRunning) sendToAI(nextPrompt)
-                        }, 10000) // 10 seconds delay
+                        }, 10000)
                         
                         handler.postDelayed({ checkAiResponse() }, 15000)
                     }
