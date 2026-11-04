@@ -25,7 +25,7 @@ class AgentActivity : Activity() {
 
     private lateinit var etPrompt: EditText
     private lateinit var btnStart: Button
-    private lateinit var btnStop: Button // ✅ دکمه توقف
+    private lateinit var btnStop: Button
     private lateinit var btnHistory: Button
     private lateinit var tvLog: TextView
     private lateinit var tvStatus: TextView
@@ -93,27 +93,22 @@ class AgentActivity : Activity() {
             }
         }
 
-        // ✅ عملکرد دکمه توقف
         btnStop.setOnClickListener {
             if (isRunning) {
                 isRunning = false
-                handler.removeCallbacksAndMessages(null) // لغو تمام تایمرهای در انتظار
-                
-                // ارسال سیگنال Ctrl+C به ترمینال برای متوقف کردن دستورات در حال اجرا
+                handler.removeCallbacksAndMessages(null)
                 val session = TerminalManager.sessions.firstOrNull()
                 if (session != null && session.isRunning) {
-                    session.write("\u0003")
+                    session.write("\u0003") // Ctrl+C
                 }
-                
                 log("\n🛑 Agent stopped by user.")
                 updateStatus("")
                 updateProgress(0)
-                toggleButtons(isRunning = false)
+                toggleButtons(running = false)
             }
         }
     }
 
-    // ✅ متد جدید برای مدیریت نمایش دکمه‌ها
     private fun toggleButtons(running: Boolean) {
         runOnUiThread {
             if (running) {
@@ -241,7 +236,7 @@ class AgentActivity : Activity() {
 
     private fun startAgent(prompt: String) {
         isRunning = true
-        toggleButtons(running = true) // ✅ فعال کردن دکمه Stop
+        toggleButtons(running = true)
         logBuilder.clear()
         updateStatus("")
         updateProgress(0)
@@ -426,7 +421,7 @@ class AgentActivity : Activity() {
                     updateProgress(100)
                     saveMessageToChat("ai", "TASK_COMPLETE")
                     isRunning = false
-                    toggleButtons(running = false) // ✅ مخفی کردن دکمه Stop
+                    toggleButtons(running = false)
                     return@evaluateJavascript
                 }
 

@@ -32,7 +32,6 @@
             android:textColor="#FFFFFF" />
     </LinearLayout>
 
-    <!-- ✅ کادر ورودی با قابلیت اسکرول و حداکثر ۶ خط -->
     <EditText
         android:id="@+id/et_agent_prompt"
         android:layout_width="match_parent"
@@ -47,7 +46,6 @@
         android:padding="8dp"
         android:layout_marginBottom="8dp"/>
 
-    <!-- ✅ دکمه‌های Start و Stop -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
