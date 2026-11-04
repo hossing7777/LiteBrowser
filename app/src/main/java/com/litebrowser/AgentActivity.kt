@@ -9,6 +9,8 @@ import android.os.Looper
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
 import android.util.Base64
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebView
@@ -21,11 +23,13 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.termux.terminal.TerminalSession
+import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
+import com.termux.view.TerminalViewClient
 import java.io.File
 import kotlin.concurrent.thread
 
-class AgentActivity : Activity() {
+class AgentActivity : Activity(), TerminalViewClient {
 
     private lateinit var etPrompt: EditText
     private lateinit var btnStart: Button
@@ -50,7 +54,7 @@ class AgentActivity : Activity() {
     private val agentMemoryFile by lazy { File(filesDir, "home/agent_memory.txt") }
 
     // MEMORY SYSTEM
-    private val recentSteps = mutableListOf<Pair<String, String>>() // (command, output)
+    private val recentSteps = mutableListOf<Pair<String, String>>()
     private val aiNotes = mutableListOf<String>()
     private var originalTask: String = ""
     private var lastExecutedCommand: String = ""
@@ -75,6 +79,9 @@ class AgentActivity : Activity() {
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
         terminalView = findViewById(R.id.agent_terminal_view)
+
+        // ✅ رفع کرش: تنظیم کلاینت برای ترمینال زنده
+        terminalView.setTerminalViewClient(this)
 
         handler.postDelayed({
             setupWebView()
@@ -112,7 +119,6 @@ class AgentActivity : Activity() {
             updateStatus("")
             updateProgress(0)
             toggleButtons(running = false)
-            try { terminalView.attachSession(null) } catch (e: Exception) {}
         }
     }
 
@@ -127,7 +133,6 @@ class AgentActivity : Activity() {
     }
 
     private fun ensureTerminalSession() {
-        // Refresh DNS before session creation
         (application as LiteApp).writeDnsConfig()
 
         if (TerminalManager.sessions.isEmpty() || TerminalManager.sessions.firstOrNull()?.isRunning == false) {
@@ -303,7 +308,6 @@ class AgentActivity : Activity() {
         updateStatus("")
         updateProgress(0)
 
-        // Reset memory for new task
         originalTask = prompt
         recentSteps.clear()
         aiNotes.clear()
@@ -460,7 +464,6 @@ class AgentActivity : Activity() {
                 if (alreadyProcessed) { handler.postDelayed({ checkAiResponse() }, 500); return@evaluateJavascript }
                 if (!hasCode || isGenerating) { handler.postDelayed({ checkAiResponse() }, 500); return@evaluateJavascript }
 
-                // Extract notes from AI response
                 if (aiText.isNotEmpty()) extractAiNotes(aiText)
 
                 if (agentCodeFile.exists()) {
@@ -523,7 +526,6 @@ class AgentActivity : Activity() {
                     var finalOutput = if (cleanOutput.isEmpty()) "Command executed successfully (no output)." else cleanOutput
                     if (finalOutput.length > 5000) finalOutput = finalOutput.take(5000) + "\n... (output truncated)"
 
-                    // Save to memory
                     if (lastExecutedCommand.isNotEmpty()) {
                         recentSteps.add(lastExecutedCommand to finalOutput)
                         if (recentSteps.size > 8) recentSteps.removeAt(0)
@@ -559,4 +561,31 @@ class AgentActivity : Activity() {
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
+
+    // ==========================================
+    // TerminalViewClient Implementation (Required for TerminalView to work without crashing)
+    // ==========================================
+    override fun onScale(scale: Float): Float = 1.0f
+    override fun onSingleTapUp(e: MotionEvent?) {}
+    override fun shouldBackButtonBeMappedToEscape(): Boolean = false
+    override fun shouldEnforceCharBasedInput(): Boolean = false
+    override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
+    override fun isTerminalViewSelected(): Boolean = false
+    override fun copyModeChanged(copyMode: Boolean) {}
+    override fun onKeyDown(keyCode: Int, e: KeyEvent?, session: TerminalSession?): Boolean = false
+    override fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean = false
+    override fun onLongPress(event: MotionEvent?): Boolean = false
+    override fun readControlKey(): Boolean = false
+    override fun readAltKey(): Boolean = false
+    override fun readShiftKey(): Boolean = false
+    override fun readFnKey(): Boolean = false
+    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession?): Boolean = false
+    override fun onEmulatorSet() {}
+    override fun logError(tag: String?, message: String?) {}
+    override fun logWarn(tag: String?, message: String?) {}
+    override fun logInfo(tag: String?, message: String?) {}
+    override fun logDebug(tag: String?, message: String?) {}
+    override fun logVerbose(tag: String?, message: String?) {}
+    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {}
+    override fun logStackTrace(tag: String?, e: Exception?) {}
 }
