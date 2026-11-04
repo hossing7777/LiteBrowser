@@ -204,7 +204,7 @@ class AgentActivity : Activity() {
             )
 
             val session = TerminalSession(prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager)
-            session.updateSize(80, 24)
+            session.updateSize(1000, 24)
             TerminalManager.addSession(session)
         }
     }
