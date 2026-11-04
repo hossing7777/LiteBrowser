@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp"
+    android:padding="8dp"
     android:background="#F5F5F5">
 
     <!-- Header -->
@@ -12,7 +12,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginBottom="8dp">
+        android:layout_marginBottom="4dp">
 
         <LinearLayout
             android:layout_width="0dp"
@@ -24,27 +24,40 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="AI Agent"
-                android:textSize="20sp"
+                android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="#000000"/>
 
-            <!-- نمایش مصرف اینترنت -->
             <TextView
                 android:id="@+id/tv_data_usage"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Data used: 0.00 MB"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:textColor="#4CAF50"
                 android:fontFamily="monospace" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/btn_toggle_view"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🖥️ بزرگ‌نمایی"
+            android:textSize="11sp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp"
+            android:layout_marginEnd="4dp"
+            android:backgroundTint="#9C27B0"
+            android:textColor="#FFFFFF" />
 
         <Button
             android:id="@+id/btn_agent_history"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="History 📂"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp"
             android:backgroundTint="#2196F3"
             android:textColor="#FFFFFF" />
     </LinearLayout>
@@ -61,15 +74,16 @@
         android:inputType="textMultiLine"
         android:gravity="top|start"
         android:background="@android:drawable/edit_text"
-        android:padding="8dp"
-        android:layout_marginBottom="8dp"/>
+        android:padding="6dp"
+        android:textSize="12sp"
+        android:layout_marginBottom="4dp"/>
 
     <!-- Control Buttons -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="8dp">
+        android:layout_marginBottom="4dp">
 
         <Button
             android:id="@+id/btn_agent_start"
@@ -77,6 +91,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="شروع ایجنت (Start)"
+            android:textSize="12sp"
             android:backgroundTint="#4CAF50"
             android:textColor="#FFFFFF" />
 
@@ -84,23 +99,23 @@
             android:id="@+id/btn_agent_stop"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="4dp"
             android:text="توقف (Stop)"
+            android:textSize="12sp"
             android:backgroundTint="#F44336"
             android:textColor="#FFFFFF"
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- Progress Bar -->
+    <!-- Progress Bar & Status -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginBottom="8dp"
+        android:layout_marginBottom="4dp"
         android:visibility="gone"
         android:id="@+id/layout_progress">
-
         <TextView
             android:id="@+id/tv_progress_percent"
             android:layout_width="wrap_content"
@@ -108,9 +123,8 @@
             android:text="0%"
             android:textStyle="bold"
             android:textColor="#2196F3"
-            android:textSize="16sp"
-            android:layout_marginEnd="8dp"/>
-
+            android:textSize="14sp"
+            android:layout_marginEnd="6dp"/>
         <ProgressBar
             android:id="@+id/pb_task_progress"
             style="?android:attr/progressBarStyleHorizontal"
@@ -122,27 +136,27 @@
             android:progressTint="#2196F3" />
     </LinearLayout>
 
-    <!-- Status Text -->
     <TextView
         android:id="@+id/tv_agent_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text=""
         android:textColor="#2196F3"
-        android:textSize="14sp"
+        android:textSize="12sp"
         android:fontFamily="monospace"
-        android:padding="4dp"
-        android:layout_marginBottom="4dp"
+        android:padding="2dp"
+        android:layout_marginBottom="2dp"
         android:visibility="gone" />
 
-    <!-- Log View (Colored Logs) -->
+    <!-- Log View (وزن 1) -->
     <ScrollView
+        android:id="@+id/scroll_logs"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:background="#1E1E1E"
-        android:padding="8dp"
-        android:layout_marginBottom="8dp">
+        android:padding="6dp"
+        android:layout_marginBottom="4dp">
 
         <TextView
             android:id="@+id/tv_agent_log"
@@ -150,15 +164,16 @@
             android:layout_height="wrap_content"
             android:textColor="#FFFFFF"
             android:fontFamily="monospace"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:text="Agent is ready..." />
     </ScrollView>
 
-    <!-- DeepSeek WebView (Full Bottom Area) -->
+    <!-- WebView (وزن 1.5 برای بزرگتر بودن) -->
     <FrameLayout
+        android:id="@+id/frame_webview"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_weight="1.5"
         android:background="#FFFFFF">
         <WebView
             android:id="@+id/agent_webview"

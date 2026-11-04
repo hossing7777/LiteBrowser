@@ -20,6 +20,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
@@ -35,10 +36,13 @@ class AgentActivity : Activity() {
     private lateinit var btnStart: Button
     private lateinit var btnStop: Button
     private lateinit var btnHistory: Button
+    private lateinit var btnToggleView: Button
     private lateinit var tvLog: TextView
     private lateinit var tvStatus: TextView
     private lateinit var tvDataUsage: TextView
     private lateinit var webView: WebView
+    private lateinit var scrollLogs: ScrollView
+    private lateinit var frameWebView: FrameLayout
     private lateinit var progressBar: ProgressBar
     private lateinit var layoutProgress: LinearLayout
     private lateinit var pbTaskProgress: ProgressBar
@@ -47,10 +51,10 @@ class AgentActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private var isRunning = false
     private var isPageLoaded = false
+    private var isLogsHidden = false
     private val logBuilder = SpannableStringBuilder()
     private var lastStatusLine = ""
 
-    // Data Usage Tracking
     private var startRx = 0L
     private var startTx = 0L
     private var totalRx = 0L
@@ -76,10 +80,13 @@ class AgentActivity : Activity() {
         btnStart = findViewById(R.id.btn_agent_start)
         btnStop = findViewById(R.id.btn_agent_stop)
         btnHistory = findViewById(R.id.btn_agent_history)
+        btnToggleView = findViewById(R.id.btn_toggle_view)
         tvLog = findViewById(R.id.tv_agent_log)
         tvStatus = findViewById(R.id.tv_agent_status)
         tvDataUsage = findViewById(R.id.tv_data_usage)
         webView = findViewById(R.id.agent_webview)
+        scrollLogs = findViewById(R.id.scroll_logs)
+        frameWebView = findViewById(R.id.frame_webview)
         progressBar = findViewById(R.id.agent_progress)
         layoutProgress = findViewById(R.id.layout_progress)
         pbTaskProgress = findViewById(R.id.pb_task_progress)
@@ -87,7 +94,6 @@ class AgentActivity : Activity() {
 
         requestNotificationPermission()
 
-        // Initialize data counters
         totalRx = TrafficStats.getUidRxBytes(Process.myUid())
         totalTx = TrafficStats.getUidTxBytes(Process.myUid())
         if (totalRx == TrafficStats.UNSUPPORTED.toLong()) totalRx = 0L
@@ -97,6 +103,23 @@ class AgentActivity : Activity() {
             setupWebView()
             webView.loadUrl("https://chat.deepseek.com/")
         }, 800)
+
+        btnToggleView.setOnClickListener {
+            isLogsHidden = !isLogsHidden
+            if (isLogsHidden) {
+                scrollLogs.visibility = View.GONE
+                frameWebView.layoutParams.height = 0
+                (frameWebView.layoutParams as LinearLayout.LayoutParams).weight = 2.5f
+                btnToggleView.text = "📜 نمایش لاگ"
+            } else {
+                scrollLogs.visibility = View.VISIBLE
+                (scrollLogs.layoutParams as LinearLayout.LayoutParams).weight = 1f
+                (frameWebView.layoutParams as LinearLayout.LayoutParams).weight = 1.5f
+                btnToggleView.text = "🖥️ بزرگ‌نمایی"
+            }
+            scrollLogs.requestLayout()
+            frameWebView.requestLayout()
+        }
 
         btnHistory.setOnClickListener {
             startActivity(Intent(this, ChatHistoryActivity::class.java))
@@ -203,7 +226,7 @@ class AgentActivity : Activity() {
                 "-w", "/root", "/bin/sh", "-l"
             )
 
-            val session = TerminalSession(prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager)
+            val session = TerminalSession(prootBin.absolutePath, homeDir.absolutePath, args, envVars, 1000, TerminalManager)
             session.updateSize(1000, 24)
             TerminalManager.addSession(session)
         }
@@ -340,7 +363,6 @@ class AgentActivity : Activity() {
         updateStatus("")
         updateProgress(0)
 
-        // Reset data usage for this session
         startRx = TrafficStats.getUidRxBytes(Process.myUid())
         startTx = TrafficStats.getUidTxBytes(Process.myUid())
         if (startRx == TrafficStats.UNSUPPORTED.toLong()) startRx = 0L
@@ -375,50 +397,18 @@ class AgentActivity : Activity() {
             If you learn a critical fact, you may include it OUTSIDE the code block like:
             [NOTE: your important fact here]
 
-            [ADVANCED CAPABILITIES - READ CAREFULLY]
-            You have access to powerful tools. You MUST install them if they are missing before using them.
-            
-            1. WEB SCRAPING & DATA EXTRACTION (ADVANCED):
-               - You CAN extract data from websites and save it as CSV, Excel, or JSON.
-               - Install: `apk add python3 py3-pip py3-requests py3-beautifulsoup4 py3-pandas py3-lxml py3-openpyxl`
-               - Step 1: Write a Python script using `cat << 'PYEOF'`.
-               - Step 2: Use `requests` and `BeautifulSoup` to fetch and parse HTML. ALWAYS set User-Agent header: `headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}`.
-               - Step 3: Structure the data with a list of dictionaries.
-               - Step 4: Use `pandas` to save the data:
-                 * CSV: `df.to_csv('/root/Download/output.csv', index=False)`
-                 * Excel: `df.to_excel('/root/Download/output.xlsx', index=False)`
-                 * JSON: `df.to_json('/root/Download/output.json', orient='records')`
-               - IMPORTANT: If a website requires JavaScript to load data (like infinite scroll or dynamic tables), you MUST use the DeepSeek `[Search]` feature to get the data, OR advise the user that this site cannot be scraped statically.
-
-            2. MUSIC/VIDEO DOWNLOADING:
-               - Tool: `yt-dlp`
-               - Install: `apk add yt-dlp`
-               - Usage: `yt-dlp -x --audio-format mp3 -o "/root/Download/%(title)s.%(ext)s" "URL"`
-            
-            3. DOCUMENT GENERATION (PDF / WORD):
-               - Use Markdown + `pandoc`. Install: `apk add pandoc wkhtmltopdf`
-               - PDF: `pandoc /root/Download/research.md -o "/root/Download/Output.pdf" --pdf-engine=wkhtmltopdf`
-               - Word: `pandoc /root/Download/research.md -o "/root/Download/Output.docx"`
-            
-            4. WINDOWS EXECUTABLE (.EXE) GENERATION:
-               - Install: `apk add mingw-w64-gcc`
-               - Write C code, then compile: `x86_64-w64-mingw32-gcc /root/Download/main.c -o /root/Download/program.exe -static`
-            
-            5. PYTHON SCRIPTING & AUDIO:
-               - Install: `apk add python3 py3-pip py3-numpy`
+            [ADVANCED CAPABILITIES]
+            1. WEB SCRAPING: Use Python (`apk add python3 py3-pip py3-requests py3-beautifulsoup4 py3-pandas py3-lxml py3-openpyxl`) for data extraction to CSV/Excel/JSON.
+            2. MUSIC: Use `yt-dlp` (if network allows) or direct download via `wget`.
+            3. DOCUMENTS: Use `pandoc` and `wkhtmltopdf` for PDF/Word. For Persian PDFs, use HTML with `dir="rtl"` and Noto fonts.
 
             [SMART PACKAGE INSTALLATION & OFFLINE CACHE]
-            You MUST use this exact logic for installing ANY package to ensure offline caching works:
-            
             PACKAGE="package_name"
             CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
             mkdir -p "${'$'}CACHE_DIR"
-            
             if ls ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk 1> /dev/null 2>&1; then
-                echo "📦 [Local Cache] Installing ${'$'}PACKAGE from offline cache..."
                 apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk || apk add --no-cache ${'$'}PACKAGE
             else
-                echo "🌐 [Internet] Downloading ${'$'}PACKAGE and saving to cache..."
                 apk fetch --recursive -o "${'$'}CACHE_DIR" ${'$'}PACKAGE
                 apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/*.apk || apk add --no-cache ${'$'}PACKAGE
             fi
@@ -433,10 +423,7 @@ class AgentActivity : Activity() {
 
     private fun sendToAI(text: String) {
         log("📤 Sending prompt to AI...", Color.BLUE)
-        
-        // Update data usage before sending
         updateDataUsage()
-
         val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         
         val js = """
@@ -497,7 +484,6 @@ class AgentActivity : Activity() {
         if (!isRunning) return
         aiCheckAttempts++
         
-        // Update data usage periodically
         if (aiCheckAttempts % 5 == 0) updateDataUsage()
 
         if (aiCheckAttempts > 1200) { 
@@ -508,6 +494,11 @@ class AgentActivity : Activity() {
         val js = """
             (function() {
                 try {
+                    // Check for CAPTCHA
+                    if (document.body.innerText.includes("Click on all the things") || document.body.innerText.includes("CAPTCHA") || document.body.innerText.includes("تصاویر")) {
+                        return JSON.stringify({ captcha: true });
+                    }
+
                     window.scrollTo(0, document.body.scrollHeight);
                     if (document.body.innerText.includes("Messages are too frequent") || document.body.innerText.includes("پیام‌ها خیلی زیاد")) {
                         return JSON.stringify({ rateLimited: true });
@@ -555,6 +546,14 @@ class AgentActivity : Activity() {
             try {
                 val jsonObj = org.json.JSONObject(cleanJson)
                 
+                if (jsonObj.optBoolean("captcha", false)) {
+                    log("\n⚠️ CAPTCHA Detected! Please solve the image test in the WebView below to continue...", Color.RED)
+                    updateStatus("Waiting for CAPTCHA...")
+                    // Wait 15 seconds before checking again (gives user time to solve)
+                    handler.postDelayed({ checkAiResponse() }, 15000)
+                    return@evaluateJavascript
+                }
+
                 if (jsonObj.optBoolean("rateLimited", false)) {
                     log("\n⚠️ Rate Limit hit! Waiting 30 seconds before auto-resuming...", Color.YELLOW)
                     handler.postDelayed({ 
@@ -580,7 +579,7 @@ class AgentActivity : Activity() {
                     saveMessageToChat("ai", "TASK_COMPLETE")
                     isRunning = false; toggleButtons(running = false)
                     stopService(Intent(this, AgentForegroundService::class.java))
-                    updateDataUsage() // Final update
+                    updateDataUsage()
                     return@evaluateJavascript
                 }
                 if (progress >= 0) updateProgress(progress)
