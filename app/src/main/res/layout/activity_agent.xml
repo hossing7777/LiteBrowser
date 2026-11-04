@@ -14,14 +14,30 @@
         android:gravity="center_vertical"
         android:layout_marginBottom="8dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="AI Agent"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:textColor="#000000"/>
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AI Agent"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="#000000"/>
+
+            <!-- نمایش مصرف اینترنت -->
+            <TextView
+                android:id="@+id/tv_data_usage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Data used: 0.00 MB"
+                android:textSize="12sp"
+                android:textColor="#4CAF50"
+                android:fontFamily="monospace" />
+        </LinearLayout>
 
         <Button
             android:id="@+id/btn_agent_history"
@@ -138,7 +154,7 @@
             android:text="Agent is ready..." />
     </ScrollView>
 
-    <!-- WebView (Full Bottom Area - No Terminal) -->
+    <!-- DeepSeek WebView (Full Bottom Area) -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"

@@ -5,10 +5,12 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.TrafficStats
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
 import android.util.Base64
@@ -35,6 +37,7 @@ class AgentActivity : Activity() {
     private lateinit var btnHistory: Button
     private lateinit var tvLog: TextView
     private lateinit var tvStatus: TextView
+    private lateinit var tvDataUsage: TextView
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private lateinit var layoutProgress: LinearLayout
@@ -46,6 +49,12 @@ class AgentActivity : Activity() {
     private var isPageLoaded = false
     private val logBuilder = SpannableStringBuilder()
     private var lastStatusLine = ""
+
+    // Data Usage Tracking
+    private var startRx = 0L
+    private var startTx = 0L
+    private var totalRx = 0L
+    private var totalTx = 0L
 
     private val agentCodeFile by lazy { File(filesDir, "home/agent_code.txt") }
     private val agentMemoryFile by lazy { File(filesDir, "home/agent_memory.txt") }
@@ -69,6 +78,7 @@ class AgentActivity : Activity() {
         btnHistory = findViewById(R.id.btn_agent_history)
         tvLog = findViewById(R.id.tv_agent_log)
         tvStatus = findViewById(R.id.tv_agent_status)
+        tvDataUsage = findViewById(R.id.tv_data_usage)
         webView = findViewById(R.id.agent_webview)
         progressBar = findViewById(R.id.agent_progress)
         layoutProgress = findViewById(R.id.layout_progress)
@@ -76,6 +86,12 @@ class AgentActivity : Activity() {
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
         requestNotificationPermission()
+
+        // Initialize data counters
+        totalRx = TrafficStats.getUidRxBytes(Process.myUid())
+        totalTx = TrafficStats.getUidTxBytes(Process.myUid())
+        if (totalRx == TrafficStats.UNSUPPORTED.toLong()) totalRx = 0L
+        if (totalTx == TrafficStats.UNSUPPORTED.toLong()) totalTx = 0L
 
         handler.postDelayed({
             setupWebView()
@@ -131,6 +147,19 @@ class AgentActivity : Activity() {
                 btnStart.isEnabled = false; btnStop.visibility = View.VISIBLE; etPrompt.isEnabled = false
             } else {
                 btnStart.isEnabled = true; btnStop.visibility = View.GONE; etPrompt.isEnabled = true
+            }
+        }
+    }
+
+    private fun updateDataUsage() {
+        val currentRx = TrafficStats.getUidRxBytes(Process.myUid())
+        val currentTx = TrafficStats.getUidTxBytes(Process.myUid())
+        if (currentRx != TrafficStats.UNSUPPORTED.toLong() && currentTx != TrafficStats.UNSUPPORTED.toLong()) {
+            val deltaRx = currentRx - startRx
+            val deltaTx = currentTx - startTx
+            val totalMB = (deltaRx + deltaTx) / (1024.0 * 1024.0)
+            runOnUiThread {
+                tvDataUsage.text = String.format("Data used: %.2f MB", totalMB)
             }
         }
     }
@@ -311,6 +340,13 @@ class AgentActivity : Activity() {
         updateStatus("")
         updateProgress(0)
 
+        // Reset data usage for this session
+        startRx = TrafficStats.getUidRxBytes(Process.myUid())
+        startTx = TrafficStats.getUidTxBytes(Process.myUid())
+        if (startRx == TrafficStats.UNSUPPORTED.toLong()) startRx = 0L
+        if (startTx == TrafficStats.UNSUPPORTED.toLong()) startTx = 0L
+        updateDataUsage()
+
         startForegroundService(Intent(this, AgentForegroundService::class.java))
 
         originalTask = prompt
@@ -397,6 +433,10 @@ class AgentActivity : Activity() {
 
     private fun sendToAI(text: String) {
         log("📤 Sending prompt to AI...", Color.BLUE)
+        
+        // Update data usage before sending
+        updateDataUsage()
+
         val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         
         val js = """
@@ -457,6 +497,9 @@ class AgentActivity : Activity() {
         if (!isRunning) return
         aiCheckAttempts++
         
+        // Update data usage periodically
+        if (aiCheckAttempts % 5 == 0) updateDataUsage()
+
         if (aiCheckAttempts > 1200) { 
             log("❌ Error: Total timeout waiting for AI response.", Color.RED)
             updateStatus(""); stopAgent(); return
@@ -537,6 +580,7 @@ class AgentActivity : Activity() {
                     saveMessageToChat("ai", "TASK_COMPLETE")
                     isRunning = false; toggleButtons(running = false)
                     stopService(Intent(this, AgentForegroundService::class.java))
+                    updateDataUsage() // Final update
                     return@evaluateJavascript
                 }
                 if (progress >= 0) updateProgress(progress)
