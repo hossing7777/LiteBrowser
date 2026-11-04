@@ -2,9 +2,12 @@ package com.litebrowser
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableStringBuilder
+import android.text.style.ForegroundColorSpan
 import android.util.Base64
 import android.view.View
 import android.webkit.CookieManager
@@ -18,6 +21,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.termux.terminal.TerminalSession
+import com.termux.view.TerminalView
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -34,11 +38,13 @@ class AgentActivity : Activity() {
     private lateinit var layoutProgress: LinearLayout
     private lateinit var pbTaskProgress: ProgressBar
     private lateinit var tvProgressPercent: TextView
+    private lateinit var terminalView: TerminalView
 
     private val handler = Handler(Looper.getMainLooper())
     private var isRunning = false
     private var isPageLoaded = false
-    private val logBuilder = StringBuilder()
+    
+    private val logBuilder = SpannableStringBuilder()
     private var lastStatusLine = ""
 
     private val agentCodeFile by lazy { File(filesDir, "home/agent_code.txt") }
@@ -62,10 +68,7 @@ class AgentActivity : Activity() {
         layoutProgress = findViewById(R.id.layout_progress)
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
-
-        val params = webView.layoutParams
-        params.height = 1200
-        webView.layoutParams = params
+        terminalView = findViewById(R.id.agent_terminal_view)
 
         handler.postDelayed({
             setupWebView()
@@ -94,18 +97,23 @@ class AgentActivity : Activity() {
         }
 
         btnStop.setOnClickListener {
-            if (isRunning) {
-                isRunning = false
-                handler.removeCallbacksAndMessages(null)
-                val session = TerminalManager.sessions.firstOrNull()
-                if (session != null && session.isRunning) {
-                    session.write("\u0003") // Ctrl+C
-                }
-                log("\n🛑 Agent stopped by user.")
-                updateStatus("")
-                updateProgress(0)
-                toggleButtons(running = false)
+            stopAgent()
+        }
+    }
+
+    private fun stopAgent() {
+        if (isRunning) {
+            isRunning = false
+            handler.removeCallbacksAndMessages(null)
+            val session = TerminalManager.sessions.firstOrNull()
+            if (session != null && session.isRunning) {
+                session.write("\u0003")
             }
+            log("\n🛑 Agent stopped by user.", Color.RED)
+            updateStatus("")
+            updateProgress(0)
+            toggleButtons(running = false)
+            try { terminalView.attachSession(null) } catch (e: Exception) {}
         }
     }
 
@@ -114,9 +122,11 @@ class AgentActivity : Activity() {
             if (running) {
                 btnStart.isEnabled = false
                 btnStop.visibility = View.VISIBLE
+                etPrompt.isEnabled = false
             } else {
                 btnStart.isEnabled = true
                 btnStop.visibility = View.GONE
+                etPrompt.isEnabled = true
             }
         }
     }
@@ -166,6 +176,14 @@ class AgentActivity : Activity() {
             session.updateSize(80, 24) 
             TerminalManager.addSession(session)
         }
+        
+        runOnUiThread {
+            val activeSession = TerminalManager.sessions.firstOrNull()
+            if (activeSession != null) {
+                terminalView.setTextSize(10)
+                terminalView.attachSession(activeSession)
+            }
+        }
     }
 
     private fun setupWebView() {
@@ -188,15 +206,22 @@ class AgentActivity : Activity() {
                 super.onPageFinished(view, url)
                 runOnUiThread { progressBar.visibility = View.GONE }
                 isPageLoaded = true
-                log("✅ DeepSeek page loaded. Ready to start.")
+                log("✅ DeepSeek page loaded. Ready to start.\n", Color.GREEN)
             }
         }
     }
 
-    private fun log(msg: String) {
+    private fun log(msg: String, color: Int = Color.WHITE) {
         runOnUiThread {
+            val start = logBuilder.length
             logBuilder.append(msg).append("\n")
-            tvLog.text = logBuilder.toString()
+            logBuilder.setSpan(ForegroundColorSpan(color), start, logBuilder.length, 0)
+            
+            if (logBuilder.length > 50000) {
+                logBuilder.delete(0, 20000)
+            }
+            
+            tvLog.text = logBuilder
             try {
                 val scrollView = tvLog.parent as? ScrollView
                 scrollView?.post { scrollView.fullScroll(View.FOCUS_DOWN) }
@@ -213,9 +238,9 @@ class AgentActivity : Activity() {
             } else {
                 tvStatus.visibility = View.VISIBLE
                 tvStatus.text = "⏳ $status"
-                if (status.contains("[Local Cache]")) tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
-                else if (status.contains("[Internet]")) tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3"))
-                else tvStatus.setTextColor(android.graphics.Color.parseColor("#2196F3"))
+                if (status.contains("[Local Cache]")) tvStatus.setTextColor(Color.parseColor("#4CAF50"))
+                else if (status.contains("[Internet]")) tvStatus.setTextColor(Color.parseColor("#2196F3"))
+                else tvStatus.setTextColor(Color.parseColor("#2196F3"))
             }
         }
     }
@@ -225,7 +250,7 @@ class AgentActivity : Activity() {
             layoutProgress.visibility = View.VISIBLE
             pbTaskProgress.progress = percent
             tvProgressPercent.text = "$percent%"
-            tvProgressPercent.setTextColor(if (percent == 100) android.graphics.Color.parseColor("#4CAF50") else android.graphics.Color.parseColor("#2196F3"))
+            tvProgressPercent.setTextColor(if (percent == 100) Color.parseColor("#4CAF50") else Color.parseColor("#2196F3"))
         }
     }
     
@@ -240,7 +265,7 @@ class AgentActivity : Activity() {
         logBuilder.clear()
         updateStatus("")
         updateProgress(0)
-        log("🤖 Starting Agent with task: $prompt\n")
+        log("🤖 Starting Agent with task: $prompt\n", Color.CYAN)
         
         currentChatFolder = ChatManager.createNewChat(prompt)
         currentChatMessages.clear()
@@ -279,11 +304,11 @@ class AgentActivity : Activity() {
         """.trimIndent()
 
         sendToAI(systemPrompt)
-        handler.postDelayed({ checkAiResponse() }, 3000)
+        handler.postDelayed({ checkAiResponse() }, 2000)
     }
 
     private fun sendToAI(text: String) {
-        log("📤 Sending prompt to AI...")
+        log("📤 Sending prompt to AI...", Color.BLUE)
         val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         
         val js = """
@@ -333,10 +358,9 @@ class AgentActivity : Activity() {
         aiCheckAttempts++
         
         if (aiCheckAttempts > 300) {
-            log("❌ Error: Total timeout waiting for AI response.")
+            log("❌ Error: Total timeout waiting for AI response.", Color.RED)
             updateStatus("")
-            isRunning = false
-            toggleButtons(running = false)
+            stopAgent()
             return
         }
 
@@ -398,8 +422,9 @@ class AgentActivity : Activity() {
         """.trimIndent()
 
         webView.evaluateJavascript(js) { result ->
+            if (!isRunning) return@evaluateJavascript
             if (result == null || result == "null" || result == "\"\"") {
-                handler.postDelayed({ checkAiResponse() }, 1000)
+                handler.postDelayed({ checkAiResponse() }, 500)
                 return@evaluateJavascript
             }
             
@@ -416,7 +441,7 @@ class AgentActivity : Activity() {
                 val progress = jsonObj.optInt("progress", -1)
                 
                 if (taskComplete) {
-                    log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.")
+                    log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.", Color.GREEN)
                     updateStatus("")
                     updateProgress(100)
                     saveMessageToChat("ai", "TASK_COMPLETE")
@@ -430,12 +455,12 @@ class AgentActivity : Activity() {
                 }
 
                 if (alreadyProcessed) {
-                    handler.postDelayed({ checkAiResponse() }, 1000)
+                    handler.postDelayed({ checkAiResponse() }, 500)
                     return@evaluateJavascript
                 }
 
                 if (!hasCode || isGenerating) {
-                    handler.postDelayed({ checkAiResponse() }, 1000)
+                    handler.postDelayed({ checkAiResponse() }, 500)
                     return@evaluateJavascript
                 }
                 
@@ -444,7 +469,7 @@ class AgentActivity : Activity() {
                     agentCodeFile.delete() 
                     
                     if (text.isNotEmpty()) {
-                        log("📥 AI response received. (${text.length} chars)")
+                        log("📥 AI response received. (${text.length} chars)", Color.GREEN)
                         saveMessageToChat("ai", text)
                         aiCheckAttempts = 0
                         processAiResponse(text)
@@ -453,13 +478,13 @@ class AgentActivity : Activity() {
                 
             } catch (e: Exception) {
                 Logger.e("Agent", "JSON parse error: ${e.message}")
-                handler.postDelayed({ checkAiResponse() }, 1000)
+                handler.postDelayed({ checkAiResponse() }, 500)
             }
         }
     }
 
     private fun processAiResponse(command: String) {
-        log("\n💻 Running Command:\n$command\n")
+        log("\n💻 Running Command:\n$command\n", Color.parseColor("#FF9800"))
         
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
@@ -473,30 +498,28 @@ class AgentActivity : Activity() {
             val execCmd = "echo \"$startMarker\"; sh /root/run_agent.sh < /dev/null; echo \"$endMarker\"\r"
             
             session.write(execCmd)
-            log("⏳ Executing...")
+            log("⏳ Executing...", Color.GRAY)
             updateStatus("Starting execution...")
-            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1500)
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1000)
         } else {
-            log("❌ Error: No terminal session.")
-            isRunning = false
-            toggleButtons(running = false)
+            log("❌ Error: No terminal session.", Color.RED)
+            stopAgent()
         }
     }
 
     private fun readTerminalOutput(startMarker: String, endMarker: String, attempts: Int) {
         if (!isRunning) return
         
-        if (attempts > 300) { 
-            log("❌ Error: Command execution timed out.")
+        if (attempts > 240) {
+            log("❌ Error: Command execution timed out.", Color.RED)
             updateStatus("")
-            isRunning = false
-            toggleButtons(running = false)
+            stopAgent()
             return
         }
 
         val session = TerminalManager.sessions.firstOrNull()
         if (session == null) {
-            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 2000)
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 500)
             return
         }
 
@@ -521,13 +544,14 @@ class AgentActivity : Activity() {
                     }
 
                     runOnUiThread {
+                        if (!isRunning) return@runOnUiThread
                         updateStatus("") 
-                        log("\n📄 Output:\n$finalOutput\n")
+                        log("\n📄 Output:\n$finalOutput\n", Color.YELLOW)
                         saveMessageToChat("terminal_output", finalOutput)
                         
                         val nextPrompt = "Command Output:\n$finalOutput\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
                         sendToAI(nextPrompt)
-                        handler.postDelayed({ checkAiResponse() }, 3000)
+                        handler.postDelayed({ checkAiResponse() }, 2000)
                     }
                     return@thread
                 }
@@ -543,7 +567,7 @@ class AgentActivity : Activity() {
                 }
             }
             
-            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 2000)
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 500)
         }
     }
 

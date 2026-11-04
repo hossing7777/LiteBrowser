@@ -3,9 +3,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp"
-    android:background="#FFFFFF">
+    android:padding="12dp"
+    android:background="#F5F5F5">
 
+    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -32,13 +33,14 @@
             android:textColor="#FFFFFF" />
     </LinearLayout>
 
+    <!-- Prompt Input -->
     <EditText
         android:id="@+id/et_agent_prompt"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="درخواست خود را وارد کنید..."
-        android:minLines="2"
-        android:maxLines="6"
+        android:minLines="1"
+        android:maxLines="3"
         android:scrollbars="vertical"
         android:inputType="textMultiLine"
         android:gravity="top|start"
@@ -46,6 +48,7 @@
         android:padding="8dp"
         android:layout_marginBottom="8dp"/>
 
+    <!-- Control Buttons -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -72,6 +75,7 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- Progress Bar -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -102,6 +106,7 @@
             android:progressTint="#2196F3" />
     </LinearLayout>
 
+    <!-- Status Text -->
     <TextView
         android:id="@+id/tv_agent_status"
         android:layout_width="match_parent"
@@ -114,11 +119,12 @@
         android:layout_marginBottom="4dp"
         android:visibility="gone" />
 
+    <!-- Log View (Scrollable) -->
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="#1A1A1A"
+        android:background="#1E1E1E"
         android:padding="8dp"
         android:layout_marginBottom="8dp">
 
@@ -126,29 +132,51 @@
             android:id="@+id/tv_agent_log"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="#00FF00"
+            android:textColor="#FFFFFF"
             android:fontFamily="monospace"
             android:textSize="12sp"
             android:text="Agent is ready..." />
     </ScrollView>
 
-    <FrameLayout
+    <!-- Live Terminal & WebView Split -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="200dp"
-        android:background="#DDDDDD"
-        android:padding="2dp">
-        
-        <WebView
-            android:id="@+id/agent_webview"
-            android:layout_width="match_parent"
+        android:layout_height="160dp"
+        android:orientation="horizontal"
+        android:background="#000000">
+
+        <!-- Live Terminal View -->
+        <FrameLayout
+            android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:background="#FFFFFF" />
-            
-        <ProgressBar
-            android:id="@+id/agent_progress"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:visibility="gone" />
-    </FrameLayout>
+            android:layout_weight="1"
+            android:background="#000000">
+            <com.termux.view.TerminalView
+                android:id="@+id/agent_terminal_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:focusable="false"
+                android:focusableInTouchMode="false" />
+        </FrameLayout>
+
+        <!-- Hidden WebView (DeepSeek) -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="#FFFFFF">
+            <WebView
+                android:id="@+id/agent_webview"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#FFFFFF" />
+            <ProgressBar
+                android:id="@+id/agent_progress"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:visibility="gone" />
+        </FrameLayout>
+
+    </LinearLayout>
 </LinearLayout>
