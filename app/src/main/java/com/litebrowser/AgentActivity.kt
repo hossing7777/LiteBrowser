@@ -110,7 +110,7 @@ class AgentActivity : Activity() {
         
         // لود کردن کلید ذخیره شده
         val prefs = getSharedPreferences("LitePrefs", MODE_PRIVATE)
-        etApiKey.setText(prefs.getString("api_key", ""))
+        etApiKey.setText(prefs.getString("api_key", "ng-8a69afcc9a542af2a0d445a31175026f"))
         etApiModel.setText(prefs.getString("api_model", "thinkingmachines/inkling:free"))
         layoutProgress = findViewById(R.id.layout_progress)
         pbTaskProgress = findViewById(R.id.pb_task_progress)
@@ -140,7 +140,7 @@ class AgentActivity : Activity() {
 
         handler.postDelayed({
             setupWebView()
-            // webView.loadUrl("https://chat.deepseek.com/") // COMMENTED OUT: DeepSeek WebView is disabled
+            // // webView.loadUrl("https://chat.deepseek.com/") // Disabled DeepSeek // COMMENTED OUT: DeepSeek WebView is disabled
         }, 800)
 
         btnToggleView.setOnClickListener {
