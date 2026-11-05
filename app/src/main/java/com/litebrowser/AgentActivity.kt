@@ -204,9 +204,7 @@ class AgentActivity : Activity() {
             Logger.i("Agent", "Created new session pid=" + session.getPid())
         } else {
             Logger.e("Agent", "Failed to create terminal session")
-            log("
-ERROR: Failed to create terminal session (Alpine not installed?)
-", Color.RED)
+            log("ERROR: Failed to create terminal session (Alpine not installed?)", Color.RED)
         }
     }
 
