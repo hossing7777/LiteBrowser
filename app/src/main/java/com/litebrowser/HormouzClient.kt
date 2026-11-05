@@ -85,6 +85,15 @@ object HormouzClient {
 
     // لیست مدل‌های پیشنهادی هرمز
     val AVAILABLE_MODELS = listOf(
+        // مدل‌های پولی (بدون محدودیت روزانه - هزینه ناچیز)
+        "nvidia/nemotron-3.5-lightning",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "google/gemma-4-31b-it",
+        "google/gemma-4-26b-a4b-it",
+        "liquid/lfm-2.5-2.6b",
+        "xingchen-agi/xing4.0-29b-a4b",
+        "recursive/flint-v1.0",
+        // مدل‌های رایگان (محدودیت روزانه)
         "nvidia/nemotron-3.5-lightning:free",
         "nvidia/nemotron-3-ultra-550b-a55b:free",
         "google/gemma-4-31b-it:free",

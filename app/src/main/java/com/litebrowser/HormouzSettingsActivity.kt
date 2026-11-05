@@ -30,7 +30,28 @@ class HormouzSettingsActivity : Activity() {
         tvTestResult.text = "وضعیت: ذخیره نشده"
 
         val models = HormouzClient.AVAILABLE_MODELS
-        val modelAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, models)
+        val modelAdapter = object : ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, models) {
+            override fun getView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup): android.view.View {
+                val view = super.getView(position, convertView, parent)
+                val tv = view as android.widget.TextView
+                tv.textSize = 14f
+                tv.setPadding(8, 8, 8, 8)
+                val isFree = models[position].endsWith(":free")
+                tv.setTextColor(if (isFree) android.graphics.Color.parseColor("#4CAF50") else android.graphics.Color.parseColor("#FF9800"))
+                return view
+            }
+
+            override fun getDropDownView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup): android.view.View {
+                val view = super.getDropDownView(position, convertView, parent)
+                val tv = view as android.widget.TextView
+                tv.textSize = 14f
+                tv.setPadding(16, 16, 16, 16)
+                val isFree = models[position].endsWith(":free")
+                tv.setTextColor(if (isFree) android.graphics.Color.parseColor("#4CAF50") else android.graphics.Color.parseColor("#FF9800"))
+                return view
+            }
+        }
+        modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerModel.adapter = modelAdapter
         val savedModelIndex = models.indexOf(store.hormouzModel)
         if (savedModelIndex >= 0) spinnerModel.setSelection(savedModelIndex)
