@@ -22,10 +22,11 @@ class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private lateinit var urlBar: EditText
-    private lateinit var btnTerminal: Button
     private lateinit var btnReload: Button
-    private lateinit var btnAgent: Button
-    private lateinit var btnFiles: Button
+    private lateinit var btnNavBrowser: Button
+    private lateinit var btnNavAgent: Button
+    private lateinit var btnNavTerminal: Button
+    private lateinit var btnNavFiles: Button
     private var isAiWatcherRunning = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,10 +36,11 @@ class MainActivity : Activity() {
 
         webView = findViewById(R.id.webview)
         urlBar = findViewById(R.id.url_bar)
-        btnTerminal = findViewById(R.id.btn_terminal)
         btnReload = findViewById(R.id.btn_reload)
-        btnAgent = findViewById(R.id.btn_agent)
-        btnFiles = findViewById(R.id.btn_files)
+        btnNavBrowser = findViewById(R.id.btn_nav_browser)
+        btnNavAgent = findViewById(R.id.btn_nav_agent)
+        btnNavTerminal = findViewById(R.id.btn_nav_terminal)
+        btnNavFiles = findViewById(R.id.btn_nav_files)
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -57,10 +59,11 @@ class MainActivity : Activity() {
             } else false
         }
 
-        btnAgent.setOnClickListener { startActivity(Intent(this, AgentActivity::class.java)) }
-        btnTerminal.setOnClickListener { startActivity(Intent(this, TerminalActivity::class.java)) }
-        btnFiles.setOnClickListener { startActivity(Intent(this, FileManagerActivity::class.java)) }
         btnReload.setOnClickListener { webView.reload() }
+        btnNavBrowser.setOnClickListener { /* Already on Browser */ }
+        btnNavAgent.setOnClickListener { startActivity(Intent(this, AgentActivity::class.java)) }
+        btnNavTerminal.setOnClickListener { startActivity(Intent(this, TerminalActivity::class.java)) }
+        btnNavFiles.setOnClickListener { startActivity(Intent(this, FileManagerActivity::class.java)) }
 
         webView.loadUrl("https://chat.deepseek.com/")
         requestStoragePermission()
@@ -132,7 +135,7 @@ class MainActivity : Activity() {
             })();
         """.trimIndent()
         webView.evaluateJavascript(js, null)
-        Toast.makeText(this, "سوال به هوش مصنوعی ارسال شد...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Question sent to AI...", Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroy() { isAiWatcherRunning = false; super.onDestroy() }
