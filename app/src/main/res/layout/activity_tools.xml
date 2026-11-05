@@ -6,14 +6,35 @@
     android:padding="12dp"
     android:background="#F5F5F5">
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Enable Self-Upgrade Mechanism"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="#333333" />
+
+        <Switch
+            android:id="@+id/sw_self_upgrade"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+    </LinearLayout>
+
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Self-Upgrade Keywords"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:textColor="#333333"
-        android:layout_marginBottom="8dp" />
+        android:textSize="14sp"
+        android:textColor="#666666"
+        android:layout_marginBottom="4dp" />
 
     <EditText
         android:id="@+id/et_keywords"
@@ -55,7 +76,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Installed Tools (Self-Upgrade)"
+        android:text="Installed Tools"
         android:textSize="16sp"
         android:textStyle="bold"
         android:textColor="#333333"
@@ -73,7 +94,7 @@
         android:id="@+id/tv_no_tools"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="No tools installed yet. Ask the AI Agent to build one!"
+        android:text="No tools installed yet."
         android:textAlignment="center"
         android:textColor="#999999"
         android:visibility="gone" />

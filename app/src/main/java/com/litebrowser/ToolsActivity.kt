@@ -1,6 +1,7 @@
 package com.litebrowser
 
 import android.app.Activity
+import android.content.Intent
 import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
@@ -12,6 +13,7 @@ import java.io.File
 
 class ToolsActivity : Activity() {
 
+    private lateinit var swSelfUpgrade: Switch
     private lateinit var etKeywords: EditText
     private lateinit var btnSaveKeywords: Button
     private lateinit var btnRefreshTools: Button
@@ -30,6 +32,7 @@ class ToolsActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_tools)
 
+        swSelfUpgrade = findViewById(R.id.sw_self_upgrade)
         etKeywords = findViewById(R.id.et_keywords)
         btnSaveKeywords = findViewById(R.id.btn_save_keywords)
         btnRefreshTools = findViewById(R.id.btn_refresh_tools)
@@ -38,6 +41,20 @@ class ToolsActivity : Activity() {
 
         baseDir.mkdirs()
         toolsDir.mkdirs()
+
+        
+        swSelfUpgrade.isChecked = getSharedPreferences("LitePrefs", MODE_PRIVATE).getBoolean("self_upgrade_on", false)
+        swSelfUpgrade.setOnCheckedChangeListener { _, isChecked ->
+            getSharedPreferences("LitePrefs", MODE_PRIVATE).edit().putBoolean("self_upgrade_on", isChecked).apply()
+            if (isChecked) {
+                Toast.makeText(this, "Self-Upgrade Enabled. Starting Agent...", Toast.LENGTH_SHORT).show()
+                val intent = Intent(this, AgentActivity::class.java)
+                intent.putExtra("START_UPGRADE", true)
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "Self-Upgrade Disabled", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         loadKeywords()
         setupListView()
