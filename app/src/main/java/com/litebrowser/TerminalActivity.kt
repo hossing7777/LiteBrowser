@@ -130,58 +130,19 @@ class TerminalActivity : Activity(), TerminalSessionClient, TerminalViewClient {
 
     private fun createNewSession(viewWidth: Int, viewHeight: Int) {
         try {
-            val app = application as LiteApp
-            val prefixDir = File(app.filesDir, "usr")
-            val homeDir = File(app.filesDir, "home").also { it.mkdirs() }
-            val tmpDir = File(app.cacheDir, "proot-tmp").also { it.mkdirs() }
-            val nativeDir = app.applicationInfo.nativeLibraryDir
-
-            val prootBin = File(nativeDir, "libproot.so")
-            val prootLoader = File(nativeDir, "libproot-loader.so")
-            val alpineRoot = File(prefixDir, "var/lib/pr/installed-rootfs/alpine")
-
-            val envVars = arrayOf(
-                "PATH=${nativeDir}:${prefixDir.absolutePath}/bin:/system/bin:/system/xbin",
-                "HOME=${homeDir.absolutePath}",
-                "PREFIX=${prefixDir.absolutePath}",
-                "LD_LIBRARY_PATH=${nativeDir}:${prefixDir.absolutePath}/lib",
-                "APP_PREFIX=${prefixDir.absolutePath}",
-                "APP_HOME=${homeDir.absolutePath}",
-                "APP_PACKAGE=${app.packageName}",
-                "PROOT_LOADER=${prootLoader.absolutePath}",
-                "PROOT_NO_SECCOMP=1",
-                "PROOT_TMP_DIR=${tmpDir.absolutePath}",
-                "TMPDIR=${tmpDir.absolutePath}",
-                "TERM=xterm-256color",
-                "LANG=C.UTF-8",
-                "LC_ALL=C.UTF-8"
-            )
-
-            // ✅ افزودن بایند برای پوشه bin اندروید به /usr/local/bin لینوکس
-            val args = arrayOf(
-                prootBin.absolutePath, "--link2symlink", "-0",
-                "-r", alpineRoot.absolutePath,
-                "-b", "/dev", "-b", "/proc", "-b", "/sys",
-                "-b", "${homeDir.absolutePath}:/root",
-                "-b", "/storage/emulated/0/Download/Local_AI_Models/Library_Cache:/mnt/cache",
-                "-b", "${prefixDir.absolutePath}/bin:/usr/local/bin",
-                "-w", "/root", "/bin/sh", "-l"
-            )
-
-            val session = TerminalSession(
-                prootBin.absolutePath, homeDir.absolutePath, args, envVars, 2000, TerminalManager
-            )
-            
-            TerminalManager.addSession(session)
-            attachToSession(session, viewWidth, viewHeight)
-            updateSpinner()
-            
+            val session = SessionFactory.createSession(this, viewWidth, viewHeight)
+            if (session != null) {
+                TerminalManager.addSession(session)
+                attachToSession(session, viewWidth, viewHeight)
+                updateSpinner()
+            } else {
+                Toast.makeText(this, "Failed to create terminal session", Toast.LENGTH_LONG).show()
+            }
         } catch (e: Throwable) {
             Logger.e("Terminal", "Create session failed", e)
             Toast.makeText(this, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
-
     private fun attachToSession(session: TerminalSession, viewWidth: Int, viewHeight: Int) {
         if (terminalSession === session && sessionAttached) return
         

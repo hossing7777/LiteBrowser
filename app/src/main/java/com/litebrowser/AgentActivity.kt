@@ -67,6 +67,7 @@ class AgentActivity : Activity() {
     private val aiNotes = mutableListOf<String>()
     private var originalTask: String = ""
     private var lastExecutedCommand: String = ""
+    private var agentSession: TerminalSession? = null
 
     private var currentChatFolder: File? = null
     private val currentChatMessages = mutableListOf<ChatMessage>()
@@ -154,8 +155,8 @@ class AgentActivity : Activity() {
         if (isRunning) {
             isRunning = false
             handler.removeCallbacksAndMessages(null)
-            val session = TerminalManager.sessions.firstOrNull()
-            if (session != null && session.isRunning) session.write("\u0003")
+            val session = getAgentSession()
+            if (session != null) session.write("\u0003")
             log("\n🛑 Agent stopped by user.", Color.RED)
             updateStatus("")
             updateProgress(0)
@@ -188,48 +189,30 @@ class AgentActivity : Activity() {
     }
 
     private fun ensureTerminalSession() {
-        (application as LiteApp).writeDnsConfig()
-
-        if (TerminalManager.sessions.isEmpty() || TerminalManager.sessions.firstOrNull()?.isRunning == false) {
-            Logger.i("Agent", "Creating new terminal session")
-            val app = application as LiteApp
-            val prefixDir = File(app.filesDir, "usr")
-            val homeDir = File(app.filesDir, "home").also { it.mkdirs() }
-            val tmpDir = File(app.cacheDir, "proot-tmp").also { it.mkdirs() }
-            val nativeDir = app.applicationInfo.nativeLibraryDir
-            val resolvConfHost = File(app.filesDir, "etc/resolv.conf")
-
-            val prootBin = File(nativeDir, "libproot.so")
-            val prootLoader = File(nativeDir, "libproot-loader.so")
-            val alpineRoot = File(prefixDir, "var/lib/pr/installed-rootfs/alpine")
-
-            val envVars = arrayOf(
-                "PATH=${nativeDir}:${prefixDir.absolutePath}/bin:/system/bin:/system/xbin",
-                "HOME=${homeDir.absolutePath}", "PREFIX=${prefixDir.absolutePath}",
-                "LD_LIBRARY_PATH=${nativeDir}:${prefixDir.absolutePath}/lib",
-                "APP_PREFIX=${prefixDir.absolutePath}", "APP_HOME=${homeDir.absolutePath}",
-                "APP_PACKAGE=${app.packageName}", "PROOT_LOADER=${prootLoader.absolutePath}",
-                "PROOT_NO_SECCOMP=1", "PROOT_TMP_DIR=${tmpDir.absolutePath}",
-                "TMPDIR=${tmpDir.absolutePath}", "TERM=xterm-256color",
-                "LANG=C.UTF-8", "LC_ALL=C.UTF-8"
-            )
-
-            val args = arrayOf(
-                prootBin.absolutePath, "--link2symlink", "-0",
-                "-r", alpineRoot.absolutePath,
-                "-b", "/dev", "-b", "/proc", "-b", "/sys",
-                "-b", "${homeDir.absolutePath}:/root",
-                "-b", "${resolvConfHost.absolutePath}:/etc/resolv.conf",
-                "-b", "${prefixDir.absolutePath}/bin:/usr/local/bin",
-                "-b", "/storage/emulated/0/Download:/root/Download",
-                "-b", "/storage/emulated/0/Download/Local_AI_Models/Library_Cache:/root/Local_AI_Models/Library_Cache",
-                "-w", "/root", "/bin/sh", "-l"
-            )
-
-            val session = TerminalSession(prootBin.absolutePath, homeDir.absolutePath, args, envVars, 1000, TerminalManager)
-            session.updateSize(1000, 24)
-            TerminalManager.addSession(session)
+        val existing = agentSession?.takeIf { it.isRunning }
+            ?: TerminalManager.sessions.lastOrNull()?.takeIf { it.isRunning }
+        if (existing != null) {
+            agentSession = existing
+            Logger.i("Agent", "Reusing session pid=" + existing.getPid())
+            return
         }
+        (application as LiteApp).writeDnsConfig()
+        val session = SessionFactory.createSession(this, 80, 24)
+        if (session != null) {
+            TerminalManager.addSession(session)
+            agentSession = session
+            Logger.i("Agent", "Created new session pid=" + session.getPid())
+        } else {
+            Logger.e("Agent", "Failed to create terminal session")
+            log("
+ERROR: Failed to create terminal session (Alpine not installed?)
+", Color.RED)
+        }
+    }
+
+    private fun getAgentSession(): TerminalSession? {
+        return agentSession?.takeIf { it.isRunning }
+            ?: TerminalManager.sessions.lastOrNull()?.takeIf { it.isRunning }
     }
 
     private fun setupWebView() {
@@ -384,59 +367,76 @@ class AgentActivity : Activity() {
         ensureTerminalSession()
 
         val systemPrompt = """
-            [INSTRUCTIONS]
-            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
-            Do NOT explain anything. Do NOT use markdown outside the code block.
-            You are running as root.
+[INSTRUCTIONS]
+You are an expert Alpine Linux terminal bot AND an autonomous Android developer.
+Your ONLY job is to output ONE bash command, wrapped in a ```bash block.
+Do NOT explain anything outside the code block, except for the tags below.
+You run as root inside an Alpine PRoot on an Android phone.
 
-            [PROGRESS REPORTING]
-            After each major step, on a new line OUTSIDE the code block, write:
-            [PROGRESS: X%]
+[OUTPUT TAGS]
+After the command, on a new line OUTSIDE the code block, you may add:
+  [PROGRESS: X%]       - current progress 0-100
+  [NOTE: any fact]     - a fact you learned that should persist in memory
+When the whole task is fully done, output ONLY the text TASK_COMPLETE (no code block).
 
-            [PERSISTENT MEMORY]
-            If you learn a critical fact, you may include it OUTSIDE the code block like:
-            [NOTE: your important fact here]
+[ENVIRONMENT]
+- Working directory: /root
+- Phone storage: /root/Download  (host: /storage/emulated/0/Download)
+- AI cache dir:  /root/Download/Local_AI_Models/Library_Cache
+- AI tools dir:  /root/Download/Local_AI_Models/Tools_app
+- App source:    /root/Download/LiteBrowser-work
+- Available: apk (Alpine), python3, bash, git, coreutils, tar, unzip
 
-            [ADVANCED CAPABILITIES]
-            1. WEB SCRAPING: Use Python (`apk add python3 py3-pip py3-requests py3-beautifulsoup4 py3-pandas py3-lxml py3-openpyxl`) for data extraction to CSV/Excel/JSON.
-            2. MUSIC: Use `yt-dlp` (if network allows) or direct download via `wget`.
-            3. DOCUMENTS: Use `pandoc` and `wkhtmltopdf` for PDF/Word. For Persian PDFs, use HTML with `dir="rtl"` and Noto fonts.
+[SMART PACKAGE INSTALL]
+Use the APK cache to avoid redownloading packages across sessions:
+  PACKAGE="pkgname"
+  CACHE_DIR="/root/Download/Local_AI_Models/Library_Cache/apk"
+  mkdir -p "${'$'}CACHE_DIR"
+  if ls "${'$'}CACHE_DIR"/${'$'}PACKAGE"-*.apk 1>/dev/null 2>&1; then
+      apk add --no-cache --allow-untrusted "${'$'}CACHE_DIR"/${'$'}PACKAGE"-*.apk || apk add --no-cache "${'$'}PACKAGE"
+  else
+      apk fetch --recursive -o "${'$'}CACHE_DIR"" "${'$'}PACKAGE"
+      apk add --no-cache --allow-untrusted "${'$'}CACHE_DIR""/*.apk || apk add --no-cache "${'$'}PACKAGE"
+  fi
 
-            [SMART PACKAGE INSTALLATION & OFFLINE CACHE]
-            PACKAGE="package_name"
-            CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
-            mkdir -p "${'$'}CACHE_DIR"
-            if ls ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk 1> /dev/null 2>&1; then
-                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/${'$'}PACKAGE-*.apk || apk add --no-cache ${'$'}PACKAGE
-            else
-                apk fetch --recursive -o "${'$'}CACHE_DIR" ${'$'}PACKAGE
-                apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/*.apk || apk add --no-cache ${'$'}PACKAGE
-            fi
+[TOOLS - lightweight, no APK rebuild needed]
+Create standalone tools under:
+  /root/Download/Local_AI_Models/Tools_app/ToolName_YYYYMMDD/
+Each tool MUST have info.txt with EXACTLY 3 lines:
+  Line 1: Persian description
+  Line 2: English description
+  Line 3: STATUS ("TESTING" first, then "READY" after you verify it works)
+Test the tool end-to-end before setting STATUS=READY.
 
-            
-            [SELF-UPGRADE PROTOCOL - READ CAREFULLY]
-            You are an autonomous Android developer. Your main goal is to upgrade yourself based on:
-            1. PRIORITY 1: Keywords found at /root/Download/Local_AI_Models/tools_keywords.txt
-            2. PRIORITY 2: User requests and your own internal needs.
-            3. PRIORITY 3: Your own free will to improve yourself.
+[APP SOURCE UPGRADE - rebuilds the APK]
+Modifying LiteBrowser's own Kotlin source requires a GitHub Actions rebuild.
+Workflow:
+  1. cd /root/Download/LiteBrowser-work
+  2. Edit files ONLY via Python scripts or base64 to avoid shell truncation.
+     NEVER use "cat << EOF" on .kt files.
+     NEVER use emojis inside Kotlin string literals (encoding breaks).
+  3. Deploy:
+       git add -A
+       git commit -m "agent: <short description>"
+       git push origin main
+  4. GitHub Actions (.github/workflows/build.yml) automatically builds the new APK.
+  5. The USER downloads the APK from GitHub Actions and installs it manually.
+     Do NOT expect live changes in this session - the change is live on next install.
 
-            [HOW TO BUILD A TOOL]
-            You have full access. If you decide to build a new tool:
-            1. Create a folder at /root/Download/Local_AI_Models/Tools_app/ToolName_Date/
-            2. Inside it, create the tool files (e.g., script.py, script.sh).
-            3. Create an 'info.txt' file with exactly 3 lines:
-               Line 1: Persian description (فارسی)
-               Line 2: English description
-               Line 3: STATUS (Write "TESTING" first. After you run tests and fix all bugs/warnings, change it to "READY").
-            4. You MUST fully test the tool. Once it works perfectly, change line 3 of info.txt to "READY" so it gets a Green Light in the Tools tab.
-            
-            [CRITICAL RULES FOR FILE EDITING]
-            - NEVER use cat << EOF directly for Kotlin files. Use Python scripts to modify files safely.
-            - Use Base64 or Python to write complex text to avoid shell truncation.
+[SELF-UPGRADE PRIORITIES]
+1. Read /root/Download/Local_AI_Models/tools_keywords.txt (if it exists) - implement those ideas.
+2. Fulfill the user's request (see [TASK] below).
+3. Improve yourself when you spot a real, verified improvement.
 
-            [TASK]
-            $prompt
-        """.trimIndent()
+[CRITICAL RULES]
+- Output exactly ONE bash block per response.
+- Never write to /tmp - use /root/tmp or /root/Download.
+- Alpine uses "apk" (not apt-get).
+- If a build fails later, the failure shows in GitHub Actions logs - you do not debug builds locally.
+
+[TASK]
+${prompt}
+""".trimIndent()
 
         sendToAI(systemPrompt)
         handler.postDelayed({ checkAiResponse() }, 2000)
@@ -630,8 +630,8 @@ class AgentActivity : Activity() {
         log("\n💻 Running Command:\n$command\n", Color.parseColor("#FF9800"))
         lastExecutedCommand = command
 
-        val session = TerminalManager.sessions.firstOrNull()
-        if (session != null && session.isRunning) {
+        val session = getAgentSession()
+        if (session != null) {
             val scriptFile = File(filesDir, "home/run_agent.sh")
             scriptFile.writeText(command.replace("\r", "").trim() + "\n")
             val startMarker = "___AGENT_START___"
@@ -652,7 +652,7 @@ class AgentActivity : Activity() {
             log("❌ Error: Command execution timed out.", Color.RED)
             updateStatus(""); stopAgent(); return
         }
-        val session = TerminalManager.sessions.firstOrNull()
+        val session = getAgentSession()
         if (session == null) {
             handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 500); return
         }

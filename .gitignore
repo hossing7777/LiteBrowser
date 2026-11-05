@@ -5,3 +5,5 @@ local.properties
 .idea/
 proot-engine/src/main/jniLibs*
 pr-source/
+LiteBrowser_Full_Context.txt
+generate_context.sh

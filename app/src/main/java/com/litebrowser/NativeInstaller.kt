@@ -5,7 +5,28 @@ import android.system.Os
 import java.io.File
 
 object NativeInstaller {
+
+    private data class NativeCopy(val libName: String, val destRel: String)
+
+    private val FILES = listOf(
+        NativeCopy("libbusybox.so", "bin/busybox"),
+        NativeCopy("libpr-cli.so", "bin/pr-cli"),
+        NativeCopy("libproot.so", "lib/libproot.so"),
+        NativeCopy("libproot-loader.so", "lib/libproot-loader.so"),
+        NativeCopy("libtalloc.so", "lib/libtalloc.so.2")
+    )
+
     fun nativeDir(c: Context) = File(c.applicationInfo.nativeLibraryDir)
+
+    fun prootBin(c: Context): File {
+        val n = File(nativeDir(c), "libproot.so")
+        return if (n.exists()) n else File(c.filesDir, "usr/lib/libproot.so")
+    }
+
+    fun prootLoader(c: Context): File {
+        val n = File(nativeDir(c), "libproot-loader.so")
+        return if (n.exists()) n else File(c.filesDir, "usr/lib/libproot-loader.so")
+    }
 
     fun install(context: Context) {
         try {
@@ -13,7 +34,7 @@ object NativeInstaller {
             File(prefix, "bin").mkdirs()
             File(prefix, "lib").mkdirs()
             File(context.filesDir, "home").mkdirs()
-            
+
             val tmpDir = File(context.cacheDir, "proot-tmp")
             tmpDir.mkdirs()
             tmpDir.setReadable(true, false)
@@ -26,20 +47,27 @@ object NativeInstaller {
             }
             File(alpineRoot, "etc/resolv.conf").writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
 
-            val nativeDirFile = nativeDir(context)
-            
-            val busyboxDest = File(prefix, "bin/busybox")
-            val busyboxSrc = File(nativeDirFile, "libbusybox.so")
-            if (busyboxSrc.exists()) {
-                busyboxSrc.copyTo(busyboxDest, overwrite = true)
-                Os.chmod(busyboxDest.absolutePath, 493)
-            }
+            val nativeDir = nativeDir(context)
+            Logger.i("NativeInstaller", "nativeLibraryDir=${nativeDir.absolutePath}")
+            Logger.i("NativeInstaller", "contents=${nativeDir.list()?.joinToString(",")}")
 
-            val tallocDest = File(prefix, "lib/libtalloc.so.2")
-            val tallocSrc = File(nativeDirFile, "libtalloc.so")
-            if (tallocSrc.exists()) {
-                tallocSrc.copyTo(tallocDest, overwrite = true)
-                Os.chmod(tallocDest.absolutePath, 493)
+            for (copy in FILES) {
+                val dest = File(prefix, copy.destRel)
+                val src = File(nativeDir, copy.libName)
+                try {
+                    if (src.exists()) {
+                        if (!dest.exists() || dest.length() != src.length()) {
+                            dest.parentFile?.mkdirs()
+                            src.copyTo(dest, overwrite = true)
+                        }
+                        Os.chmod(dest.absolutePath, 493)
+                        Logger.i("NativeInstaller", "OK ${dest.absolutePath} size=${dest.length()}")
+                    } else {
+                        Logger.w("NativeInstaller", "missing in nativeDir: ${copy.libName}")
+                    }
+                } catch (e: Exception) {
+                    Logger.e("NativeInstaller", "Failed ${copy.libName}", e)
+                }
             }
 
             val askScript = File(prefix, "bin/ask")
@@ -51,30 +79,37 @@ object NativeInstaller {
                 fi
                 REQ_FILE="/root/ai_req.txt"
                 RES_FILE="/root/ai_res.txt"
-                
-                # ✅ حذف کاراکتر Newline از خروجی Base64
+                rm -f "${'$'}RES_FILE"
                 echo -n "${'$'}*" | base64 | tr -d '\n' > "${'$'}REQ_FILE"
-                
-                echo -e "\033[33mWaiting for AI... (Switch to browser if it's not open)\033[0m" >&2
-                
+                echo -e "\033[33mWaiting for AI... (Switch to browser if it is not open)\033[0m" >&2
                 count=0
                 while [ ! -f "${'$'}RES_FILE" ]; do
                     sleep 0.5
                     count=${'$'}((count+1))
-                    # تایم‌اوت ۵ دقیقه (600 * 0.5)
                     if [ ${'$'}count -ge 600 ]; then
                         echo -e "\033[31mError: Timeout waiting for AI response\033[0m" >&2
                         rm -f "${'$'}REQ_FILE"
                         exit 1
                     fi
                 done
-                
                 echo -e "\033[32mAI:\033[0m"
                 base64 -d "${'$'}RES_FILE"
                 echo ""
                 rm -f "${'$'}REQ_FILE" "${'$'}RES_FILE"
             """.trimIndent())
             Os.chmod(askScript.absolutePath, 493)
+            Logger.i("NativeInstaller", "ask script installed")
+
+            for (lib in listOf("libpr-cli.so", "libproot.so", "libproot-loader.so")) {
+                val src = File(nativeDir, lib)
+                if (src.exists()) {
+                    val simpleName = lib.removePrefix("lib").removeSuffix(".so")
+                    val link = File(prefix, "bin/$simpleName")
+                    try {
+                        if (!link.exists()) Os.symlink(src.absolutePath, link.absolutePath)
+                    } catch (_: Exception) {}
+                }
+            }
 
         } catch (e: Exception) {
             Logger.e("NativeInstaller", "install failed", e)
