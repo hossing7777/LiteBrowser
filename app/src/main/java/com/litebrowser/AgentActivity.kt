@@ -126,10 +126,10 @@ class AgentActivity : Activity() {
                 "Test each tool end-to-end with sh script.sh before setting READY."
             etPrompt.setText(autoPrompt)
             handler.postDelayed({
-                if (isPageLoaded && !isRunning) {
+                if (!isRunning) {
                     startAgent(autoPrompt)
                 }
-            }, 3000)
+            }, 1000)
         }
 
 
@@ -169,10 +169,7 @@ class AgentActivity : Activity() {
                 Toast.makeText(this, "ایجنت در حال اجراست...", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            if (!isPageLoaded) {
-                Toast.makeText(this, "لطفاً صبر کنید تا صفحه دیپ‌سیک لود شود...", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
+
             val prompt = etPrompt.text.toString().trim()
             if (prompt.isNotEmpty()) startAgent(prompt)
             else Toast.makeText(this, "لطفا یک درخواست وارد کنید", Toast.LENGTH_SHORT).show()
@@ -277,26 +274,8 @@ class AgentActivity : Activity() {
     }
 
     private fun setupWebView() {
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        val cm = CookieManager.getInstance()
-        cm.setAcceptCookie(true)
-        cm.setAcceptThirdPartyCookies(webView, true)
-        webView.addJavascriptInterface(WebAppInterface(this, webView), "AndroidBridge")
-
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                runOnUiThread { progressBar.visibility = View.VISIBLE }
-                isPageLoaded = false
-            }
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                runOnUiThread { progressBar.visibility = View.GONE }
-                isPageLoaded = true
-                log("✅ DeepSeek page loaded. Ready to start.\n", Color.GREEN)
-            }
-        }
+        // WebView is completely disabled. DeepSeek is commented out.
+        Logger.i("Agent", "WebView setup skipped (API mode only)")
     }
 
     override fun onPause() {
@@ -422,292 +401,43 @@ class AgentActivity : Activity() {
         agentMemoryFile.delete()
 
         log("🤖 Starting Agent with task: $prompt\n", Color.CYAN)
-        
-        // ذخیره کلید API
-        val apiKey = etApiKey.text.toString().trim()
-        val apiModel = etApiModel.text.toString().trim()
-        getSharedPreferences("LitePrefs", MODE_PRIVATE).edit()
-            .putString("api_key", apiKey)
-            .putString("api_model", apiModel)
-            .apply()
-
-        if (apiKey.isEmpty()) {
-            log("❌ API key is missing! Please enter it in the API Settings box above.\n", Color.RED)
-            stopAgent()
-            return
-        }
-        sendToApi(prompt)
-        return
-
         currentChatFolder = ChatManager.createNewChat(prompt)
         currentChatMessages.clear()
         saveMessageToChat("user", prompt)
         ensureTerminalSession()
 
+        val apiKey = etApiKey.text.toString().trim()
+        val apiModel = etApiModel.text.toString().trim()
+        
+        if (apiKey.isEmpty()) {
+            log("❌ API key is missing! Please enter it above.\n", Color.RED)
+            stopAgent()
+            return
+        }
+
         val systemPrompt = """
-[INSTRUCTIONS]
-You are an expert Alpine Linux terminal bot AND an autonomous Android developer.
-Your ONLY job is to output ONE bash command, wrapped in a ```bash block.
-Do NOT explain anything outside the code block, except for the tags below.
-You run as root inside an Alpine PRoot on an Android phone.
+            [INSTRUCTIONS]
+            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single bash command wrapped in ```bash and ``` blocks.
+            Do NOT explain anything. Do NOT use markdown outside the code block.
+            You are running as root.
+            [TASK]
+            $prompt
+        """.trimIndent()
 
-[OUTPUT TAGS]
-After the command, on a new line OUTSIDE the code block, you may add:
-  [PROGRESS: X%]       - current progress 0-100
-  [NOTE: any fact]     - a fact you learned that should persist in memory
-When the whole task is fully done, output ONLY the text TASK_COMPLETE (no code block).
-
-[ENVIRONMENT]
-- Working directory: /root
-- Phone storage: /root/Download  (host: /storage/emulated/0/Download)
-- AI cache dir:  /root/Download/Local_AI_Models/Library_Cache
-- AI tools dir:  /root/Download/Local_AI_Models/Tools_app
-- App source:    /root/Download/LiteBrowser-work
-- Available: apk (Alpine), python3, bash, git, coreutils, tar, unzip
-
-[SMART PACKAGE INSTALL]
-Use the APK cache to avoid redownloading packages across sessions:
-  PACKAGE="pkgname"
-  CACHE_DIR="/root/Download/Local_AI_Models/Library_Cache/apk"
-  mkdir -p "${'$'}CACHE_DIR"
-  if ls "${'$'}CACHE_DIR"/${'$'}PACKAGE"-*.apk 1>/dev/null 2>&1; then
-      apk add --no-cache --allow-untrusted "${'$'}CACHE_DIR"/${'$'}PACKAGE"-*.apk || apk add --no-cache "${'$'}PACKAGE"
-  else
-      apk fetch --recursive -o "${'$'}CACHE_DIR"" "${'$'}PACKAGE"
-      apk add --no-cache --allow-untrusted "${'$'}CACHE_DIR""/*.apk || apk add --no-cache "${'$'}PACKAGE"
-  fi
-
-[TOOLS - lightweight, no APK rebuild needed]
-Create standalone tools under:
-  /root/Download/Local_AI_Models/Tools_app/ToolName_YYYYMMDD/
-Each tool MUST have info.txt with EXACTLY 3 lines:
-  Line 1: Persian description
-  Line 2: English description
-  Line 3: STATUS ("TESTING" first, then "READY" after you verify it works)
-Test the tool end-to-end before setting STATUS=READY.
-
-[APP SOURCE UPGRADE - rebuilds the APK]
-Modifying LiteBrowser's own Kotlin source requires a GitHub Actions rebuild.
-Workflow:
-  1. cd /root/Download/LiteBrowser-work
-  2. Edit files ONLY via Python scripts or base64 to avoid shell truncation.
-     NEVER use "cat << EOF" on .kt files.
-     NEVER use emojis inside Kotlin string literals (encoding breaks).
-  3. Deploy:
-       git add -A
-       git commit -m "agent: <short description>"
-       git push origin main
-  4. GitHub Actions (.github/workflows/build.yml) automatically builds the new APK.
-  5. The USER downloads the APK from GitHub Actions and installs it manually.
-     Do NOT expect live changes in this session - the change is live on next install.
-
-[SELF-UPGRADE PRIORITIES]
-1. Read /root/Download/Local_AI_Models/tools_keywords.txt (if it exists) - implement those ideas.
-2. Fulfill the user's request (see [TASK] below).
-3. Improve yourself when you spot a real, verified improvement.
-
-[FUSE MOUNT WARNING]
-Files under /root/Download/ are on a FUSE mount (Android storage).
-NEVER use "./script.sh" to run a tool - it will fail with "Permission denied" even after chmod +x.
-ALWAYS use "sh /path/to/script.sh" or "/bin/sh /path/to/script.sh" instead.
-NEVER chmod inside /root/Download/ - it silently fails on FUSE.
-
-[CRITICAL RULES]
-- Output exactly ONE bash block per response.
-- Never write to /tmp - use /root/tmp or /root/Download.
-- Alpine uses "apk" (not apt-get).
-- If a build fails later, the failure shows in GitHub Actions logs - you do not debug builds locally.
-
-[TASK]
-${prompt}
-""".trimIndent()
-
-        sendToAI(systemPrompt)
+        // فراخوانی مستقیم API
+        sendToApi(systemPrompt)
         handler.postDelayed({ checkAiResponse() }, 2000)
     }
 
     private fun sendToAI(text: String) {
-        log("📤 Sending prompt to AI...", Color.BLUE)
-        updateDataUsage()
-        val base64Prompt = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        
-        val js = """
-            (function() {
-                try {
-                    var text = decodeURIComponent(escape(atob("$base64Prompt")));
-                    var ta = document.querySelector('textarea') || document.querySelector('div[contenteditable="true"]');
-                    if (ta) {
-                        ta.focus();
-                        if (ta.tagName === 'TEXTAREA') {
-                            var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-                            nativeSetter.call(ta, text);
-                        } else { ta.innerText = text; }
-                        ta.dispatchEvent(new Event('input', { bubbles: true }));
-                        ta.dispatchEvent(new Event('change', { bubbles: true }));
-                        
-                        var clickAttempts = 0;
-                        var maxAttempts = 3;
-                        
-                        function trySend() {
-                            clickAttempts++;
-                            if (document.body.innerText.includes("Messages are too frequent") || document.body.innerText.includes("پیام‌ها خیلی زیاد")) {
-                                return; 
-                            }
-                            ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-                            var buttons = document.querySelectorAll('button, div[role="button"]');
-                            for (var i = buttons.length - 1; i >= 0; i--) {
-                                var btn = buttons[i];
-                                if (btn.innerHTML.includes('svg') && btn.offsetWidth > 0) {
-                                    var rect = btn.getBoundingClientRect();
-                                    var taRect = ta.getBoundingClientRect();
-                                    if (rect.left > taRect.left + (taRect.width / 2) && rect.top > taRect.top) {
-                                        btn.removeAttribute('disabled');
-                                        btn.click();
-                                        break;
-                                    }
-                                }
-                            }
-                            setTimeout(function() {
-                                var currentText = ta.value || ta.innerText || "";
-                                if (currentText.trim().length > 0 && clickAttempts < maxAttempts) {
-                                    trySend();
-                                }
-                            }, 2000);
-                        }
-                        setTimeout(trySend, 3000);
-                    }
-                } catch(e) { AndroidBridge.onAgentError("JS Exception: " + e.message); }
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js, null)
+        // Deprecated. Handled by sendToApi now.
     }
 
     private var aiCheckAttempts = 0
     private var lastAiText = ""
 
     private fun checkAiResponse() {
-        if (!isRunning) return
-        aiCheckAttempts++
-        
-        if (aiCheckAttempts % 5 == 0) updateDataUsage()
-
-        if (aiCheckAttempts > 1200) { 
-            log("❌ Error: Total timeout waiting for AI response.", Color.RED)
-            updateStatus(""); stopAgent(); return
-        }
-
-        val js = """
-            (function() {
-                try {
-                    // Check for CAPTCHA
-                    if (document.body.innerText.includes("Click on all the things") || document.body.innerText.includes("CAPTCHA") || document.body.innerText.includes("تصاویر")) {
-                        return JSON.stringify({ captcha: true });
-                    }
-
-                    window.scrollTo(0, document.body.scrollHeight);
-                    if (document.body.innerText.includes("Messages are too frequent") || document.body.innerText.includes("پیام‌ها خیلی زیاد")) {
-                        return JSON.stringify({ rateLimited: true });
-                    }
-                    var markdowns = document.querySelectorAll('.ds-markdown');
-                    if (markdowns.length === 0) return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, progress: -1, aiText: "" });
-                    var lastMd = markdowns[markdowns.length - 1];
-                    if (lastMd.getAttribute('data-processed') === 'true') return JSON.stringify({ isGenerating: false, hasCode: false, taskComplete: false, alreadyProcessed: true, progress: -1, aiText: "" });
-                    var text = lastMd.innerText || lastMd.textContent || "";
-                    var progressMatch = text.match(/\[PROGRESS:\s*(\d+)%\]/i);
-                    var progressVal = progressMatch ? parseInt(progressMatch[1], 10) : -1;
-                    var textClean = text.replace(/\[PROGRESS:\s*\d+%\]/gi, "").trim();
-                    if (textClean.includes("TASK_COMPLETE")) {
-                        lastMd.setAttribute('data-processed', 'true');
-                        return JSON.stringify({ isGenerating: false, hasCode: false, taskComplete: true, alreadyProcessed: false, progress: 100, aiText: textClean });
-                    }
-                    var codeText = "";
-                    var hasCode = false;
-                    var pre = lastMd.querySelector('pre');
-                    if (pre) {
-                        codeText = pre.innerText || pre.textContent || "";
-                        codeText = codeText.replace(/^Copy\s*\n?/i, "").replace(/^Download\s*\n?/i, "").replace(/^bash\s*\n?/i, "").trim();
-                        hasCode = true;
-                    } else {
-                        var match = textClean.match(/```(?:bash|sh|shell)?\s*([\s\S]*?)```/);
-                        if (match) { codeText = match[1].trim(); hasCode = true; }
-                    }
-                    var isGenerating = false;
-                    if (textClean.endsWith("●") || textClean.endsWith("▍") || textClean.endsWith("_")) isGenerating = true;
-                    if (hasCode && !isGenerating) {
-                        lastMd.setAttribute('data-processed', 'true');
-                        AndroidBridge.saveAgentCode(codeText);
-                    }
-                    return JSON.stringify({ isGenerating: isGenerating, hasCode: hasCode, taskComplete: false, alreadyProcessed: false, progress: progressVal, aiText: textClean });
-                } catch(e) { return JSON.stringify({ isGenerating: true, hasCode: false, taskComplete: false, alreadyProcessed: false, jsError: String(e), progress: -1, aiText: "" }); }
-            })();
-        """.trimIndent()
-
-        webView.evaluateJavascript(js) { result ->
-            if (!isRunning) return@evaluateJavascript
-            if (result == null || result == "null" || result == "\"\"") {
-                handler.postDelayed({ checkAiResponse() }, 1000); return@evaluateJavascript
-            }
-            val cleanJson = result.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
-            try {
-                val jsonObj = org.json.JSONObject(cleanJson)
-                
-                if (jsonObj.optBoolean("captcha", false)) {
-                    log("\n⚠️ CAPTCHA Detected! Please solve the image test in the WebView below to continue...", Color.RED)
-                    updateStatus("Waiting for CAPTCHA...")
-                    // Wait 15 seconds before checking again (gives user time to solve)
-                    handler.postDelayed({ checkAiResponse() }, 15000)
-                    return@evaluateJavascript
-                }
-
-                if (jsonObj.optBoolean("rateLimited", false)) {
-                    log("\n⚠️ Rate Limit hit! Waiting 30 seconds before auto-resuming...", Color.YELLOW)
-                    handler.postDelayed({ 
-                        if(isRunning) {
-                            val retryJs = "document.querySelector('button[type=\"submit\"]')?.click();"
-                            webView.evaluateJavascript(retryJs, null)
-                            handler.postDelayed({ checkAiResponse() }, 5000)
-                        }
-                    }, 30000)
-                    return@evaluateJavascript
-                }
-
-                val hasCode = jsonObj.getBoolean("hasCode")
-                val isGenerating = jsonObj.getBoolean("isGenerating")
-                val taskComplete = jsonObj.optBoolean("taskComplete", false)
-                val alreadyProcessed = jsonObj.optBoolean("alreadyProcessed", false)
-                val progress = jsonObj.optInt("progress", -1)
-                val aiText = jsonObj.optString("aiText", "")
-
-                if (taskComplete) {
-                    log("\n🎉 TASK COMPLETE! The agent has finished the task successfully.", Color.GREEN)
-                    updateStatus(""); updateProgress(100)
-                    saveMessageToChat("ai", "TASK_COMPLETE")
-                    isRunning = false; toggleButtons(running = false)
-                    stopService(Intent(this, AgentForegroundService::class.java))
-                    updateDataUsage()
-                    return@evaluateJavascript
-                }
-                if (progress >= 0) updateProgress(progress)
-                if (alreadyProcessed) { handler.postDelayed({ checkAiResponse() }, 1000); return@evaluateJavascript }
-                if (!hasCode || isGenerating) { handler.postDelayed({ checkAiResponse() }, 1000); return@evaluateJavascript }
-
-                if (aiText.isNotEmpty()) extractAiNotes(aiText)
-
-                if (agentCodeFile.exists()) {
-                    val text = agentCodeFile.readText().trim()
-                    agentCodeFile.delete()
-                    if (text.isNotEmpty()) {
-                        log("📥 AI response received. (${text.length} chars)", Color.GREEN)
-                        saveMessageToChat("ai", text)
-                        aiCheckAttempts = 0
-                        processAiResponse(text)
-                    }
-                }
-            } catch (e: Exception) {
-                Logger.e("Agent", "JSON parse error: ${e.message}")
-                handler.postDelayed({ checkAiResponse() }, 1000)
-            }
-        }
+        // Deprecated.
     }
 
     private fun processAiResponse(command: String) {
