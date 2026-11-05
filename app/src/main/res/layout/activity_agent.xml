@@ -62,6 +62,32 @@
             android:textColor="#FFFFFF" />
     </LinearLayout>
 
+    <!-- API Settings -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:id="@+id/layout_api_settings"
+        android:background="#E8F5E9"
+        android:padding="4dp"
+        android:layout_marginBottom="4dp">
+        <EditText
+            android:id="@+id/et_api_key"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Hormouz API Key (ng-...)"
+            android:textSize="12sp"
+            android:inputType="textPassword" />
+        <EditText
+            android:id="@+id/et_api_model"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Model (e.g. thinkingmachines/inkling:free)"
+            android:textSize="12sp"
+            android:text="thinkingmachines/inkling:free" />
+    </LinearLayout>
+
     <!-- Prompt Input -->
     <EditText
         android:id="@+id/et_agent_prompt"

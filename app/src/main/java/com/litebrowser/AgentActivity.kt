@@ -33,6 +33,9 @@ import kotlin.concurrent.thread
 class AgentActivity : Activity() {
 
     private lateinit var etPrompt: EditText
+    private lateinit var etApiKey: EditText
+    private lateinit var etApiModel: EditText
+    private lateinit var layoutApiSettings: LinearLayout
     private lateinit var btnStart: Button
     private lateinit var btnStop: Button
     private lateinit var btnHistory: Button
@@ -89,6 +92,14 @@ class AgentActivity : Activity() {
         scrollLogs = findViewById(R.id.scroll_logs)
         frameWebView = findViewById(R.id.frame_webview)
         progressBar = findViewById(R.id.agent_progress)
+        etApiKey = findViewById(R.id.et_api_key)
+        etApiModel = findViewById(R.id.et_api_model)
+        layoutApiSettings = findViewById(R.id.layout_api_settings)
+        
+        // لود کردن کلید ذخیره شده
+        val prefs = getSharedPreferences("LitePrefs", MODE_PRIVATE)
+        etApiKey.setText(prefs.getString("api_key", ""))
+        etApiModel.setText(prefs.getString("api_model", "thinkingmachines/inkling:free"))
         layoutProgress = findViewById(R.id.layout_progress)
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
@@ -164,6 +175,31 @@ class AgentActivity : Activity() {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
             }
         }
+    }
+
+    
+    private fun sendToApi(prompt: String) {
+        updateStatus("Calling API...")
+        ApiClient.sendPrompt(
+            this,
+            etApiKey.text.toString().trim(),
+            etApiModel.text.toString().trim(),
+            prompt,
+            onResponse = { response ->
+                runOnUiThread {
+                    updateStatus("")
+                    log("📥 API Response received.\n", Color.GREEN)
+                    processAiResponse(response)
+                }
+            },
+            onError = { error ->
+                runOnUiThread {
+                    updateStatus("")
+                    log("❌ API Error: $error\n", Color.RED)
+                    stopAgent()
+                }
+            }
+        )
     }
 
     private fun stopAgent() {
@@ -374,6 +410,22 @@ class AgentActivity : Activity() {
         agentMemoryFile.delete()
 
         log("🤖 Starting Agent with task: $prompt\n", Color.CYAN)
+        
+        // ذخیره کلید API
+        val apiKey = etApiKey.text.toString().trim()
+        val apiModel = etApiModel.text.toString().trim()
+        getSharedPreferences("LitePrefs", MODE_PRIVATE).edit()
+            .putString("api_key", apiKey)
+            .putString("api_model", apiModel)
+            .apply()
+
+        if (apiKey.isNotEmpty()) {
+            // مسیر API
+            sendToApi(prompt)
+            return
+        }
+        // در غیر این صورت، مسیر WebView ادامه پیدا می‌کند
+
         currentChatFolder = ChatManager.createNewChat(prompt)
         currentChatMessages.clear()
         saveMessageToChat("user", prompt)
