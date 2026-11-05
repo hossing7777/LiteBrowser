@@ -95,6 +95,7 @@ class AgentActivity : Activity() {
         etApiKey = findViewById(R.id.et_api_key)
         etApiModel = findViewById(R.id.et_api_model)
         layoutApiSettings = findViewById(R.id.layout_api_settings)
+        layoutApiSettings.visibility = View.VISIBLE
         
         // لود کردن کلید ذخیره شده
         val prefs = getSharedPreferences("LitePrefs", MODE_PRIVATE)
