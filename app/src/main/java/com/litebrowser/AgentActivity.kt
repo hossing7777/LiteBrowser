@@ -36,6 +36,7 @@ class AgentActivity : Activity() {
     private lateinit var etApiKey: EditText
     private lateinit var etApiModel: EditText
     private lateinit var layoutApiSettings: LinearLayout
+    private lateinit var btnSaveApi: Button
     private lateinit var btnStart: Button
     private lateinit var btnStop: Button
     private lateinit var btnHistory: Button
@@ -95,6 +96,16 @@ class AgentActivity : Activity() {
         etApiKey = findViewById(R.id.et_api_key)
         etApiModel = findViewById(R.id.et_api_model)
         layoutApiSettings = findViewById(R.id.layout_api_settings)
+        btnSaveApi = findViewById(R.id.btn_save_api)
+        
+        btnSaveApi.setOnClickListener {
+            val prefs = getSharedPreferences("LitePrefs", MODE_PRIVATE)
+            prefs.edit()
+                .putString("api_key", etApiKey.text.toString().trim())
+                .putString("api_model", etApiModel.text.toString().trim())
+                .apply()
+            Toast.makeText(this, "API settings saved", Toast.LENGTH_SHORT).show()
+        }
         layoutApiSettings.visibility = View.VISIBLE
         
         // لود کردن کلید ذخیره شده
@@ -129,7 +140,7 @@ class AgentActivity : Activity() {
 
         handler.postDelayed({
             setupWebView()
-            webView.loadUrl("https://chat.deepseek.com/")
+            // webView.loadUrl("https://chat.deepseek.com/") // COMMENTED OUT: DeepSeek WebView is disabled
         }, 800)
 
         btnToggleView.setOnClickListener {
@@ -420,12 +431,13 @@ class AgentActivity : Activity() {
             .putString("api_model", apiModel)
             .apply()
 
-        if (apiKey.isNotEmpty()) {
-            // مسیر API
-            sendToApi(prompt)
+        if (apiKey.isEmpty()) {
+            log("❌ API key is missing! Please enter it in the API Settings box above.\n", Color.RED)
+            stopAgent()
             return
         }
-        // در غیر این صورت، مسیر WebView ادامه پیدا می‌کند
+        sendToApi(prompt)
+        return
 
         currentChatFolder = ChatManager.createNewChat(prompt)
         currentChatMessages.clear()

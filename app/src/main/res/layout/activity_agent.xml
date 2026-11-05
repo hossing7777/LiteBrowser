@@ -83,9 +83,19 @@
             android:id="@+id/et_api_model"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Model (e.g. thinkingmachines/inkling:free)"
+            android:hint="Model (e.g. thinkingmachines/inkling)"
             android:textSize="12sp"
-            android:text="thinkingmachines/inkling:free" />
+            android:text="thinkingmachines/inkling" />
+        <Button
+            android:id="@+id/btn_save_api"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save API Settings"
+            android:layout_gravity="end"
+            android:backgroundTint="#4CAF50"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:layout_marginTop="4dp" />
     </LinearLayout>
 
     <!-- Prompt Input -->
