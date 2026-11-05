@@ -62,6 +62,8 @@ object SessionFactory {
                 "-b", "${DOWNLOAD_HOST}:/root/Download",
                 "-b", "${prefixDir.absolutePath}/bin:/usr/local/bin",
                 "-b", "${resolvConfHost.absolutePath}:/etc/resolv.conf",
+                "-b", "/system:/system",
+                "-b", "/vendor:/vendor",
                 "-w", "/root",
                 "/bin/sh", "-l"
             )

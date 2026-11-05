@@ -28,6 +28,35 @@ object NativeInstaller {
         return if (n.exists()) n else File(c.filesDir, "usr/lib/libproot-loader.so")
     }
 
+    private fun dumpAndroidProps(context: Context) {
+        try {
+            val propsFile = File(context.filesDir, "home/Android_Props.txt")
+            val sb = StringBuilder()
+            val props = listOf(
+                "ro.product.brand", "ro.product.manufacturer", "ro.product.model",
+                "ro.product.device", "ro.product.name", "ro.build.fingerprint",
+                "ro.build.id", "ro.build.type", "ro.build.tags",
+                "ro.build.version.release", "ro.build.version.sdk",
+                "ro.build.version.security_patch", "ro.bootloader",
+                "gsm.version.baseband", "ro.serialno", "ro.build.date",
+                "ro.hardware", "ro.board.platform", "ro.soc.manufacturer",
+                "ro.soc.model", "ro.opengles.version", "ro.hardware.egl",
+                "ro.hardware.vulkan"
+            )
+            for (prop in props) {
+                val value = try {
+                    val p = Runtime.getRuntime().exec(arrayOf("/system/bin/getprop", prop))
+                    p.inputStream.bufferedReader().readText().trim().ifEmpty { "N/A" }
+                } catch (e: Exception) { "N/A" }
+                sb.append(prop).append("=").append(value).append("\n")
+            }
+            propsFile.writeText(sb.toString())
+            Logger.i("NativeInstaller", "Android props dumped to " + propsFile.absolutePath)
+        } catch (e: Exception) {
+            Logger.e("NativeInstaller", "Failed to dump Android props", e)
+        }
+    }
+
     fun install(context: Context) {
         try {
             val prefix = File(context.filesDir, "usr")
@@ -99,6 +128,7 @@ object NativeInstaller {
             """.trimIndent())
             Os.chmod(askScript.absolutePath, 493)
             Logger.i("NativeInstaller", "ask script installed")
+            dumpAndroidProps(context)
 
             for (lib in listOf("libpr-cli.so", "libproot.so", "libproot-loader.so")) {
                 val src = File(nativeDir, lib)

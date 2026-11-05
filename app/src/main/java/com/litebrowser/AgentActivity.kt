@@ -95,6 +95,21 @@ class AgentActivity : Activity() {
 
         requestNotificationPermission()
 
+        if (intent?.getBooleanExtra("START_UPGRADE", false) == true) {
+            val autoPrompt = "Read /root/Download/Local_AI_Models/tools_keywords.txt " +
+                "and implement the tools/keywords listed there. " +
+                "Each tool goes to /root/Download/Local_AI_Models/Tools_app/ToolName_YYYYMMDD/ " +
+                "with info.txt (3 lines: Persian, English, TESTING then READY after verification). " +
+                "Test each tool end-to-end with sh script.sh before setting READY."
+            etPrompt.setText(autoPrompt)
+            handler.postDelayed({
+                if (isPageLoaded && !isRunning) {
+                    startAgent(autoPrompt)
+                }
+            }, 3000)
+        }
+
+
         totalRx = TrafficStats.getUidRxBytes(Process.myUid())
         totalTx = TrafficStats.getUidTxBytes(Process.myUid())
         if (totalRx == TrafficStats.UNSUPPORTED.toLong()) totalRx = 0L
@@ -425,6 +440,12 @@ Workflow:
 1. Read /root/Download/Local_AI_Models/tools_keywords.txt (if it exists) - implement those ideas.
 2. Fulfill the user's request (see [TASK] below).
 3. Improve yourself when you spot a real, verified improvement.
+
+[FUSE MOUNT WARNING]
+Files under /root/Download/ are on a FUSE mount (Android storage).
+NEVER use "./script.sh" to run a tool - it will fail with "Permission denied" even after chmod +x.
+ALWAYS use "sh /path/to/script.sh" or "/bin/sh /path/to/script.sh" instead.
+NEVER chmod inside /root/Download/ - it silently fails on FUSE.
 
 [CRITICAL RULES]
 - Output exactly ONE bash block per response.
