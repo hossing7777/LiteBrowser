@@ -10,7 +10,7 @@ import kotlin.concurrent.thread
 
 object ApiClient {
     // آدرس API هرمز (سازگار با OpenAI)
-    private const val BASE_URL = "https://hormouz.net/v1/chat/completions"
+    private const val BASE_URL = "https://api.hormouz.net/v1/chat/completions"
     
     fun sendPrompt(context: Context, apiKey: String, model: String, prompt: String, onResponse: (String) -> Unit, onError: (String) -> Unit) {
         thread {
