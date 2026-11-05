@@ -27,6 +27,7 @@ class MainActivity : Activity() {
     private lateinit var btnNavAgent: Button
     private lateinit var btnNavTerminal: Button
     private lateinit var btnNavFiles: Button
+    private lateinit var btnNavTools: Button
     private var isAiWatcherRunning = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,6 +42,7 @@ class MainActivity : Activity() {
         btnNavAgent = findViewById(R.id.btn_nav_agent)
         btnNavTerminal = findViewById(R.id.btn_nav_terminal)
         btnNavFiles = findViewById(R.id.btn_nav_files)
+        btnNavTools = findViewById(R.id.btn_nav_tools)
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -64,6 +66,7 @@ class MainActivity : Activity() {
         btnNavAgent.setOnClickListener { startActivity(Intent(this, AgentActivity::class.java)) }
         btnNavTerminal.setOnClickListener { startActivity(Intent(this, TerminalActivity::class.java)) }
         btnNavFiles.setOnClickListener { startActivity(Intent(this, FileManagerActivity::class.java)) }
+        btnNavTools.setOnClickListener { startActivity(Intent(this, ToolsActivity::class.java)) }
 
         webView.loadUrl("https://chat.deepseek.com/")
         requestStoragePermission()
