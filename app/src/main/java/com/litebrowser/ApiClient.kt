@@ -12,7 +12,7 @@ object ApiClient {
     // آدرس API هرمز (سازگار با OpenAI)
     private const val BASE_URL = "https://api.hormouz.net/v1/chat/completions"
     
-    fun sendPrompt(context: Context, apiKey: String, model: String, prompt: String, onResponse: (String) -> Unit, onError: (String) -> Unit) {
+    fun sendPrompt(context: Context, apiKey: String, prompt: String, onResponse: (String) -> Unit, onError: (String) -> Unit) {
         thread {
             try {
                 val url = URL(BASE_URL)
@@ -21,18 +21,16 @@ object ApiClient {
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("Authorization", "Bearer $apiKey")
                 conn.doOutput = true
-                conn.connectTimeout = 60000
-                conn.readTimeout = 60000
+                conn.connectTimeout = 120000
+                conn.readTimeout = 120000
 
-                // ساخت بدنه JSON (به صورت دستی برای جلوگیری از نیاز به کتابخانه اضافی)
+                // ساخت بدنه JSON به صورت دستی
                 val escapedPrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-                val jsonBody = """
-                    {
-                        "model": "$model",
-                        "messages": [{"role": "user", "content": "$escapedPrompt"}],
-                        "stream": false
-                    }
-                """.trimIndent()
+                val jsonBody = "{" +
+                        "\"model\": \"nvidia/nemotron-3.5-lightning:free\"," +
+                        "\"messages\": [{\"role\": \"user\", \"content\": \"$escapedPrompt\"}]," +
+                        "\"stream\": false" +
+                        "}"
 
                 val os = OutputStreamWriter(conn.outputStream)
                 os.write(jsonBody)
@@ -49,7 +47,7 @@ object ApiClient {
                     }
                     reader.close()
                     
-                    // استخراج محتوای پاسخ (Parsing ساده)
+                    // استخراج محتوای پاسخ
                     val jsonString = response.toString()
                     val contentMatch = Regex("\"content\"\\s*:\\s*\"(.*?)\"").find(jsonString)
                     val content = contentMatch?.groupValues?.get(1)?.replace("\\n", "\n")?.replace("\\\"", "\"") ?: "Error parsing response"

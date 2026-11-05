@@ -192,7 +192,6 @@ class AgentActivity : Activity() {
         ApiClient.sendPrompt(
             this,
             etApiKey.text.toString().trim(),
-            etApiModel.text.toString().trim(),
             prompt,
             onResponse = { response ->
                 runOnUiThread {
