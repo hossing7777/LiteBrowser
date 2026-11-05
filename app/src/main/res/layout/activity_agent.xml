@@ -23,7 +23,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="AI Agent"
+                android:text="AI Agent (Hormouz)"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="#000000"/>
@@ -60,42 +60,6 @@
             android:paddingHorizontal="8dp"
             android:backgroundTint="#2196F3"
             android:textColor="#FFFFFF" />
-    </LinearLayout>
-
-    <!-- API Settings -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:visibility="gone"
-        android:id="@+id/layout_api_settings"
-        android:background="#E8F5E9"
-        android:padding="4dp"
-        android:layout_marginBottom="4dp">
-        <EditText
-            android:id="@+id/et_api_key"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Hormouz API Key (ng-...)"
-            android:textSize="12sp"
-            android:inputType="textPassword" />
-        <EditText
-            android:id="@+id/et_api_model"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Model (e.g. thinkingmachines/inkling)"
-            android:textSize="12sp"
-            android:text="thinkingmachines/inkling" />
-        <Button
-            android:id="@+id/btn_save_api"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Save API Settings"
-            android:layout_gravity="end"
-            android:backgroundTint="#4CAF50"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp"
-            android:layout_marginTop="4dp" />
     </LinearLayout>
 
     <!-- Prompt Input -->
@@ -184,7 +148,7 @@
         android:layout_marginBottom="2dp"
         android:visibility="gone" />
 
-    <!-- Log View (وزن 1) -->
+    <!-- Log View -->
     <ScrollView
         android:id="@+id/scroll_logs"
         android:layout_width="match_parent"
@@ -204,23 +168,4 @@
             android:text="Agent is ready..." />
     </ScrollView>
 
-    <!-- WebView (وزن 1.5 برای بزرگتر بودن) -->
-    <FrameLayout
-        android:id="@+id/frame_webview"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1.5"
-        android:background="#FFFFFF">
-        <WebView
-            android:id="@+id/agent_webview"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="#FFFFFF" />
-        <ProgressBar
-            android:id="@+id/agent_progress"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:visibility="gone" />
-    </FrameLayout>
 </LinearLayout>

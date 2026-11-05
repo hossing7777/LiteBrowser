@@ -57,6 +57,7 @@
         <activity android:name=".ChatHistoryActivity" android:exported="false" android:label="Chat History" />
         <activity android:name=".FileManagerActivity" android:exported="false" android:label="File Manager" />
         <activity android:name=".ToolsActivity" android:exported="false" android:label="Tools" />
+        <activity android:name=".HormouzSettingsActivity" android:exported="false" android:label="Hormouz Settings" />
 
         <service android:name=".AgentForegroundService" android:foregroundServiceType="dataSync" android:exported="false" />
 

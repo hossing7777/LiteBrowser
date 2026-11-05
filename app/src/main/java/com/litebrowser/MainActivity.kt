@@ -44,6 +44,7 @@ class MainActivity : Activity() {
         btnNavTerminal = findViewById(R.id.btn_nav_terminal)
         btnNavFiles = findViewById(R.id.btn_nav_files)
         btnNavTools = findViewById(R.id.btn_nav_tools)
+        val btnSettings = findViewById<Button>(R.id.btn_nav_settings)
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
@@ -68,8 +69,9 @@ class MainActivity : Activity() {
         btnNavTerminal.setOnClickListener { startActivity(Intent(this, TerminalActivity::class.java)) }
         btnNavFiles.setOnClickListener { startActivity(Intent(this, FileManagerActivity::class.java)) }
         btnNavTools.setOnClickListener { startActivity(Intent(this, ToolsActivity::class.java)) }
+        btnSettings.setOnClickListener { startActivity(Intent(this, HormouzSettingsActivity::class.java)) }
 
-        webView.loadUrl("https://chat.deepseek.com/")
+        webView.loadUrl("https://www.google.com")
         requestStoragePermission()
         startAiWatcher()
     }

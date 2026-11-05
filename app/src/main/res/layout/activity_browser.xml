@@ -100,5 +100,15 @@
             android:textSize="10sp"
             android:backgroundTint="#9C27B0"
             android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/btn_nav_settings"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="Settings"
+            android:textSize="10sp"
+            android:backgroundTint="#607D8B"
+            android:textColor="#FFFFFF" />
     </LinearLayout>
 </LinearLayout>

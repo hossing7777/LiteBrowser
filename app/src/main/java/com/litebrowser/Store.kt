@@ -27,6 +27,18 @@ class Store(c: Context) {
     fun clear(k: String) = p.edit().remove(k).apply()
     fun flag(k: String) = p.getBoolean(k, false)
     fun setFlag(k: String) = p.edit().putBoolean(k, true).apply()
+    var hormouzApiKey: String
+        get() = p.getString("hormouz_api_key", "") ?: ""
+        set(v) { p.edit().putString("hormouz_api_key", v).apply() }
+        
+    var hormouzModel: String
+        get() = p.getString("hormouz_model", "nvidia/nemotron-3.5-lightning:free") ?: "nvidia/nemotron-3.5-lightning:free"
+        set(v) { p.edit().putString("hormouz_model", v).apply() }
+        
+    var hormouzMode: String
+        get() = p.getString("hormouz_mode", "auto") ?: "auto"
+        set(v) { p.edit().putString("hormouz_mode", v).apply() }
+
     var session: String
         get() = p.getString("session", "") ?: ""
         set(v) { p.edit().putString("session", v).apply() }
