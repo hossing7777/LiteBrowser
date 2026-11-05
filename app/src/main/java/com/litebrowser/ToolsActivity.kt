@@ -105,7 +105,7 @@ class ToolsActivity : Activity() {
         toolFolders.clear()
         toolNames.clear()
 
-        val folders = toolsDir.listFiles { file -> file.isDirectory } ?: emptyList()
+        val folders = toolsDir.listFiles { file -> file.isDirectory }?.toList() ?: emptyList()
         val sortedFolders = folders.sortedByDescending { it.name }
 
         for (folder in sortedFolders) {
