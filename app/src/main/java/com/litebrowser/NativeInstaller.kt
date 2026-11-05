@@ -59,6 +59,11 @@ object NativeInstaller {
 
     fun install(context: Context) {
         try {
+            if (PrivilegeManager.isShizukuAvailable()) {
+                PrivilegeManager.grantAllPermissions(context.packageName)
+            } else {
+                Logger.w("NativeInstaller", "Shizuku not available, falling back to manual grants")
+            }
             val prefix = File(context.filesDir, "usr")
             File(prefix, "bin").mkdirs()
             File(prefix, "lib").mkdirs()

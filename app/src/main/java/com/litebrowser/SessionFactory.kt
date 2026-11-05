@@ -63,6 +63,8 @@ object SessionFactory {
                 "-b", "${prefixDir.absolutePath}/bin:/usr/local/bin",
                 "-b", "${resolvConfHost.absolutePath}:/etc/resolv.conf",
                 "-b", "/system:/system",
+                "-b", "/data:/data",
+                "-b", "/sdcard:/sdcard",
                 "-b", "/vendor:/vendor",
                 "-w", "/root",
                 "/bin/sh", "-l"

@@ -34,6 +34,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         Logger.i("Browser", "onCreate() called")
         setContentView(R.layout.activity_browser)
+        PrivilegeManager.requestPermission()
 
         webView = findViewById(R.id.webview)
         urlBar = findViewById(R.id.url_bar)

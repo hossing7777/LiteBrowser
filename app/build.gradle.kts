@@ -41,6 +41,8 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation(project(":terminal-view"))
     implementation(project(":proot-engine"))
     implementation("org.apache.commons:commons-compress:1.26.0")
