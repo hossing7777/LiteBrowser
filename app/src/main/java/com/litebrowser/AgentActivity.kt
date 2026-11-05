@@ -36,7 +36,6 @@ class AgentActivity : Activity() {
     private lateinit var tvStatus: TextView
     private lateinit var tvDataUsage: TextView
     private lateinit var scrollLogs: ScrollView
-    private lateinit var progressBar: ProgressBar
     private lateinit var layoutProgress: LinearLayout
     private lateinit var pbTaskProgress: ProgressBar
     private lateinit var tvProgressPercent: TextView
@@ -76,7 +75,6 @@ class AgentActivity : Activity() {
         tvStatus = findViewById(R.id.tv_agent_status)
         tvDataUsage = findViewById(R.id.tv_data_usage)
         scrollLogs = findViewById(R.id.scroll_logs)
-        progressBar = findViewById(R.id.agent_progress)
         layoutProgress = findViewById(R.id.layout_progress)
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
