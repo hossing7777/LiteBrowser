@@ -3,22 +3,78 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
+    android:padding="12dp"
     android:background="#F5F5F5">
 
     <TextView
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="New Tools Section"
-        android:textSize="24sp"
+        android:text="Self-Upgrade Keywords"
+        android:textSize="18sp"
         android:textStyle="bold"
-        android:textColor="#333333" />
+        android:textColor="#333333"
+        android:layout_marginBottom="8dp" />
+
+    <EditText
+        android:id="@+id/et_keywords"
+        android:layout_width="match_parent"
+        android:layout_height="80dp"
+        android:gravity="top|start"
+        android:hint="Enter keywords for AI to focus on..."
+        android:inputType="textMultiLine"
+        android:background="#FFFFFF"
+        android:padding="8dp"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="16dp">
+
+        <Button
+            android:id="@+id/btn_save_keywords"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Save Keywords"
+            android:backgroundTint="#4CAF50"
+            android:textColor="#FFFFFF" />
+
+        <Button
+            android:id="@+id/btn_refresh_tools"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="Refresh Tools"
+            android:backgroundTint="#2196F3"
+            android:textColor="#FFFFFF" />
+    </LinearLayout>
 
     <TextView
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:text="Features will be added here soon..."
+        android:text="Installed Tools (Self-Upgrade)"
         android:textSize="16sp"
-        android:textColor="#666666" />
+        android:textStyle="bold"
+        android:textColor="#333333"
+        android:layout_marginBottom="8dp" />
+
+    <ListView
+        android:id="@+id/lv_tools"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="#DDDDDD"
+        android:dividerHeight="1dp" />
+
+    <TextView
+        android:id="@+id/tv_no_tools"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="No tools installed yet. Ask the AI Agent to build one!"
+        android:textAlignment="center"
+        android:textColor="#999999"
+        android:visibility="gone" />
 </LinearLayout>

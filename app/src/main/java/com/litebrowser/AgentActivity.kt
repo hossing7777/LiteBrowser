@@ -413,6 +413,27 @@ class AgentActivity : Activity() {
                 apk add --no-cache --allow-untrusted ${'$'}CACHE_DIR/*.apk || apk add --no-cache ${'$'}PACKAGE
             fi
 
+            
+            [SELF-UPGRADE PROTOCOL - READ CAREFULLY]
+            You are an autonomous Android developer. Your main goal is to upgrade yourself based on:
+            1. PRIORITY 1: Keywords found at /root/Download/Local_AI_Models/tools_keywords.txt
+            2. PRIORITY 2: User requests and your own internal needs.
+            3. PRIORITY 3: Your own free will to improve yourself.
+
+            [HOW TO BUILD A TOOL]
+            You have full access. If you decide to build a new tool:
+            1. Create a folder at /root/Download/Local_AI_Models/Tools_app/ToolName_Date/
+            2. Inside it, create the tool files (e.g., script.py, script.sh).
+            3. Create an 'info.txt' file with exactly 3 lines:
+               Line 1: Persian description (فارسی)
+               Line 2: English description
+               Line 3: STATUS (Write "TESTING" first. After you run tests and fix all bugs/warnings, change it to "READY").
+            4. You MUST fully test the tool. Once it works perfectly, change line 3 of info.txt to "READY" so it gets a Green Light in the Tools tab.
+            
+            [CRITICAL RULES FOR FILE EDITING]
+            - NEVER use cat << EOF directly for Kotlin files. Use Python scripts to modify files safely.
+            - Use Base64 or Python to write complex text to avoid shell truncation.
+
             [TASK]
             $prompt
         """.trimIndent()
