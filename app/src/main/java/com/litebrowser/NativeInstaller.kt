@@ -42,22 +42,45 @@ object NativeInstaller {
                 Os.chmod(tallocDest.absolutePath, 493)
             }
 
-            // ✅ ساخت اسکریپت هوشمند نصب پکیج در زمان اجرا
-            val smartPkgScript = File(prefix, "bin/install_pkg")
-            smartPkgScript.writeText("""
+            val smartPkg = File(prefix, "bin/install_pkg")
+            smartPkg.writeText("""
                 #!/bin/sh
-                PKG="${'$'}1"
-                if [ -z "${'$'}PKG" ]; then echo "Usage: install_pkg <package>"; exit 1; fi
-                if command -v "${'$'}PKG" >/dev/null 2>&1; then echo "[OK] '${'$'}PKG' is already installed."; exit 0; fi
-                echo "[+] Trying 'apk add ${'$'}PKG' ..."
-                apk add --no-cache "${'$'}PKG" >/dev/null 2>&1
-                if [ ${'$'}? -eq 0 ] && command -v "${'$'}PKG" >/dev/null 2>&1; then echo "[OK] '${'$'}PKG' installed via apk."; exit 0; fi
-                echo "[+] Trying 'pip3 install ${'$'}PKG' ..."
-                pip3 install --break-system-packages "${'$'}PKG" >/dev/null 2>&1
-                if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via pip3."; exit 0; fi
-                echo "[ERROR] Failed to install '${'$'}PKG'."; exit 1
+                if [ ${'$'}# -eq 0 ]; then echo "Usage: install_pkg <package1> ..."; exit 1; fi
+                if [ ! -f /var/cache/apk/.repo_updated ]; then
+                    echo "[+] Updating Alpine repositories..."
+                    apk update
+                    mkdir -p /var/cache/apk
+                    touch /var/cache/apk/.repo_updated
+                fi
+                for PKG in "${'$'}@"; do
+                    if command -v "${'$'}PKG" >/dev/null 2>&1; then
+                        echo "[OK] '${'$'}PKG' is already installed."
+                        continue
+                    fi
+                    
+                    if [ "${'$'}PKG" = "pip" ] || [ "${'$'}PKG" = "py3-pip" ]; then
+                        echo "[+] Installing python3 and pip..."
+                        apk add --no-cache python3 py3-pip
+                        if [ ${'$'}? -ne 0 ]; then
+                            echo "[!] apk install failed, trying ensurepip..."
+                            apk add --no-cache python3
+                            python3 -m ensurepip --upgrade
+                        fi
+                        continue
+                    fi
+
+                    echo "[+] Trying 'apk add ${'$'}PKG' ..."
+                    apk add --no-cache "${'$'}PKG"
+                    if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via apk."; continue; fi
+                    
+                    echo "[+] Trying 'pip3 install ${'$'}PKG' ..."
+                    pip3 install --break-system-packages "${'$'}PKG"
+                    if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via pip3."; continue; fi
+                    
+                    echo "[ERROR] Failed to install '${'$'}PKG'."
+                done
             """.trimIndent())
-            Os.chmod(smartPkgScript.absolutePath, 493)
+            Os.chmod(smartPkg.absolutePath, 493)
 
             val askScript = File(prefix, "bin/ask")
             askScript.writeText("""

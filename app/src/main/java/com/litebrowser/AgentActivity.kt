@@ -51,6 +51,7 @@ class AgentActivity : Activity() {
     private var lastExecutedCommand: String = ""
     private var currentChatFolder: File? = null
     private val currentChatMessages = mutableListOf<ChatMessage>()
+    private var aiRetryCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -301,6 +302,7 @@ class AgentActivity : Activity() {
         logBuilder.clear()
         updateStatus("")
         updateProgress(0)
+        aiRetryCount = 0
 
         startRx = TrafficStats.getUidRxBytes(Process.myUid())
         startTx = TrafficStats.getUidTxBytes(Process.myUid())
@@ -325,18 +327,17 @@ class AgentActivity : Activity() {
         val systemPrompt = """
             [INSTRUCTIONS]
             You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single shell command wrapped in ```sh and ``` blocks.
-            Do NOT explain anything. Do NOT use markdown outside the code block.
             You are running as root in Alpine Linux.
             
             [CRITICAL RULES]
             - You MUST format your entire response inside the ```sh ... ``` block. 
             - Use `sh` instead of `bash` (bash is not installed).
             - NEVER use `apk fetch`. 
-            - NEVER use `cat << EOF` for Kotlin files.
-            - To install ANY package, use the smart installer: `install_pkg <name1> <name2> ...` (it auto-updates repositories, tries apk, pip3, and edge/testing).
+            - To install ANY package, use the smart installer: `install_pkg <name1> <name2>` 
             - For Python packages, use: `install_pkg requests beautifulsoup4`
             - To create scripts, use: `cat > script.py << 'PYSCRIPT'` ... `PYSCRIPT`
             - When the task is completely finished, output ONLY the word `TASK_COMPLETE` inside the sh block.
+            - If you are just reporting a milestone and have NO command to run, you MUST output `echo 'Step X Completed'` inside the block. NEVER output plain text outside the block.
 
             [PROGRESS REPORTING]
             After each major step, on a new line OUTSIDE the code block, write: [PROGRESS: X%]
@@ -349,8 +350,6 @@ class AgentActivity : Activity() {
 
         sendToAI(systemPrompt)
     }
-
-    private var aiRetryCount = 0
 
     private fun sendToAI(text: String) {
         log("📤 Sending prompt to Hormouz API...", Color.BLUE)
@@ -370,11 +369,10 @@ class AgentActivity : Activity() {
             runOnUiThread {
                 if (response.success && response.content != null && response.content.trim().isNotEmpty()) {
                     log("📥 AI response received.", Color.GREEN)
-                    aiRetryCount = 0 // ریست کردن شمارنده
+                    aiRetryCount = 0
                     extractAiNotes(response.content)
                     processAiResponse(response.content)
                 } else {
-                    // اگر پاسخ null یا خالی بود، دوباره تلاش کن
                     if (aiRetryCount < 3) {
                         aiRetryCount++
                         log("⚠️ AI returned empty response (null). Retrying ($aiRetryCount/3)...", Color.YELLOW)
