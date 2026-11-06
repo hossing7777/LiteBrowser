@@ -283,19 +283,17 @@ class AgentActivity : Activity() {
 
         val systemPrompt = """
             [INSTRUCTIONS]
-            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single shell command wrapped in ```sh and ``` blocks.
+            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single shell command wrapped in \\ blocks.
             Do NOT explain anything. Do NOT use markdown outside the code block.
             You are running as root in Alpine Linux.
             
             [CRITICAL RULES]
-            - You MUST format your entire response inside the ```sh ... ``` block. 
-            - Use `sh` instead of `bash` (bash is not installed).
-            - NEVER use `apk fetch`. 
-            - NEVER use `cat << EOF` for Kotlin files.
-            - To install ANY package, use the smart installer: `install_pkg <name>` (it tries apk then pip3 automatically).
-            - For Python packages, `install_pkg` handles `pip3 install --break-system-packages`.
-            - To create scripts, use `cat > script.py << 'PYSCRIPT'` ... `PYSCRIPT`.
-            - When the task is completely finished, output ONLY the word `TASK_COMPLETE` inside the sh block.
+            - You MUST format your entire response inside the \\ block. 
+            - Use \ instead of \ (bash is not installed).
+            - NEVER use \. 
+            - NEVER use \ for Kotlin files.
+            - To install ANY package, use the smart installer: \ (it auto-updates repositories, tries apk, pip3, and edge/testing).
+            - For Python packages, use:             - To create scripts, use: \ ...             - When the task is completely finished, output ONLY the word \ inside the sh block.
 
             [PROGRESS REPORTING]
             After each major step, on a new line OUTSIDE the code block, write: [PROGRESS: X%]
@@ -303,8 +301,7 @@ class AgentActivity : Activity() {
             If you learn a critical fact, you may include it OUTSIDE the code block like: [NOTE: your important fact here]
 
             [TASK]
-            $prompt
-        """.trimIndent()
+                    """.trimIndent()
 
         sendToAI(systemPrompt)
     }
@@ -338,7 +335,7 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(fullResponse: String) {
-        val codeBlockRegex = Regex("```(?:bash|sh|shell)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
+        val codeBlockRegex = Regex("\", RegexOption.IGNORE_CASE)
         var command = codeBlockRegex.find(fullResponse)?.groupValues?.get(1)?.trim()
 
         if (command.isNullOrEmpty()) {
@@ -346,8 +343,7 @@ class AgentActivity : Activity() {
             val commandLines = mutableListOf<String>()
             for (line in lines) {
                 val trimmed = line.trim()
-                if (trimmed.startsWith("[PROGRESS:") || trimmed.startsWith("[NOTE:") || 
-                    trimmed == "TASK_COMPLETE" || trimmed.startsWith("ERROR:")) continue
+                if (trimmed.startsWith("[PROGRESS:") || trimmed.startsWith("[NOTE:") || trimmed == "TASK_COMPLETE" || trimmed.startsWith("ERROR:")) continue
                 if (trimmed.startsWith("apk ") || trimmed.startsWith("install_pkg ") || trimmed.startsWith("pip3 ") || 
                     trimmed.startsWith("mkdir ") || trimmed.startsWith("cd ") || trimmed.startsWith("echo ") || 
                     trimmed.startsWith("python3 ") || trimmed.startsWith("cat ") || trimmed.startsWith("printf ") || 
@@ -356,30 +352,36 @@ class AgentActivity : Activity() {
                     commandLines.add(line)
                 }
             }
-            command = commandLines.joinToString("\n").trim()
+            command = commandLines.joinToString("
+").trim()
         }
 
-        if (fullResponse.contains("TASK_COMPLETE") && (command.isNullOrEmpty() || !command.contains("TASK_COMPLETE"))) {
-            log("\n🎉 TASK COMPLETE detected!", Color.GREEN)
             updateProgress(100); stopAgent(); return
         }
 
         if (command.isNullOrEmpty()) {
-            log("⚠️ Could not extract valid command. AI Response: $fullResponse", Color.YELLOW)
-            handler.postDelayed({ if (isRunning) sendToAI("[ERROR] Output ONLY a ```sh ... ``` block with the next command. Original task: $originalTask") }, 5000)
+            log("⚠️ Could not extract valid command. AI Response: ", Color.YELLOW)
+            handler.postDelayed({
+                if (isRunning) {
+                    sendToAI("[ERROR] Your last response did not contain a bash command inside \\ block. Please try again. You must output ONLY the bash command inside the block. Do not include any explanations. Original task: ")
+                }
+            }, 5000)
             return
         }
 
-        log("\n💻 Running Command:\n$command\n", Color.parseColor("#FF9800"))
+        log("
+💻 Running Command:
+\n", Color.parseColor("#FF9800"))
         lastExecutedCommand = command
 
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             val scriptFile = File(filesDir, "home/run_agent.sh")
-            scriptFile.writeText(command.replace("\r", "").trim() + "\n")
+            scriptFile.writeText(command.replace("", "").trim() + "
+")
             val startMarker = "___AGENT_START___"
             val endMarker = "___AGENT_END___"
-            session.write("echo \"$startMarker\"; sh /root/run_agent.sh < /dev/null; echo \"$endMarker\"\r")
+            session.write("echo "\"; sh /root/run_agent.sh < /dev/null; echo "\"")
             log("⏳ Executing...", Color.GRAY)
             updateStatus("Starting execution...")
             handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1000)
