@@ -468,10 +468,16 @@ class AgentActivity : Activity() {
             command = commandLines.joinToString("\n").trim()
         }
 
-        if (fullResponse.contains("TASK_COMPLETE") && (command.isNullOrEmpty() || !command.contains("TASK_COMPLETE"))) {
+        // فقط اگر TASK_COMPLETE داخل بلاک شل باشد و کل دستور فقط همان باشد
+        val isTaskComplete = command?.trim() == "TASK_COMPLETE"
+        if (isTaskComplete && !originalTask.contains("Do NOT output TASK_COMPLETE")) {
             log("\n🎉 TASK COMPLETE detected!", Color.GREEN)
             showNotification("Agent Task Complete", "The AI agent has finished the task successfully.")
             updateProgress(100); stopAgent(); return
+        } else if (isTaskComplete && originalTask.contains("Do NOT output TASK_COMPLETE")) {
+            log("⚠️ Ignored TASK_COMPLETE because task is still in progress.", Color.YELLOW)
+            sendToAI("[ERROR] Do NOT output TASK_COMPLETE. The task is not finished. Please proceed with the NEXT step.")
+            return
         }
 
         if (command.isNullOrEmpty()) {
