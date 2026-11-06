@@ -76,6 +76,7 @@ class AgentActivity : Activity() {
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
+        // فعال‌سازی قابلیت کپی و انتخاب متن
         tvLog.setTextIsSelectable(true)
         tvLog.movementMethod = ScrollingMovementMethod()
         tvLog.isFocusable = true
@@ -93,6 +94,8 @@ class AgentActivity : Activity() {
         startTx = TrafficStats.getUidTxBytes(Process.myUid())
         if (startRx == TrafficStats.UNSUPPORTED.toLong()) startRx = 0L
         if (startTx == TrafficStats.UNSUPPORTED.toLong()) startTx = 0L
+        lastRx = startRx
+        lastTx = startTx
 
         requestNotificationPermission()
         btnToggleView.setOnClickListener { toggleLogView() }
@@ -123,6 +126,8 @@ class AgentActivity : Activity() {
                 val totalDeltaTx = currentTx - startTx
                 val totalMB = (totalDeltaRx + totalDeltaTx) / (1024.0 * 1024.0)
                 tvDataUsage.text = String.format("Data used: %.2f MB", totalMB)
+                lastRx = currentRx
+                lastTx = currentTx
             }
             handler.postDelayed(this, 2000)
         }
@@ -376,14 +381,7 @@ class AgentActivity : Activity() {
             - For PDF generation, use `weasyprint` (install via `install_pkg weasyprint`).
             - When the task is completely finished, output ONLY the word `TASK_COMPLETE` inside the sh block.
             - If you are just reporting a milestone, output `echo 'Step X Completed'` inside the block.
-
-            [IMPORTANT - DO NOT USE PIP OR VENV DIRECTLY]
-            You MUST use ONLY the `install_pkg` command for ALL packages.
-            NEVER use `pip install` directly (it will fail with externally-managed-environment).
-            NEVER use `python3 -m venv` (it will fail with Permission denied in /root/Download).
-            NEVER install `torch`, `transformers`, or any local LLM libraries.
-            The ONLY packages needed are: `python3`, `py3-pip`, `weasyprint`, `requests`, `font-noto-naskh-arabic`.
-            The `install_pkg` script handles pip3 internally with --break-system-packages.
+            - Be patient, do not output anything outside the block unless it's a PROGRESS or NOTE.
 
             [AUTO-RECOVERY SYSTEM]
             If a command fails because a tool is missing (e.g., 'command not found'), DO NOT try to download it manually. Run `install_pkg <toolname>` and then try the original command again.
@@ -419,10 +417,11 @@ class AgentActivity : Activity() {
                 } else {
                     if (aiRetryCount < 2) {
                         aiRetryCount++
-                        log("⚠️ AI returned null (server busy). Retrying ($aiRetryCount/2)...", Color.YELLOW)
+                        log("⚠️ AI returned empty response (null). Retrying ($aiRetryCount/2)...", Color.YELLOW)
+                        showNotification("Agent Retrying", "AI returned null. Retrying automatically ($aiRetryCount/2)...")
                         handler.postDelayed({ 
                             if (isRunning) {
-                                sendToAI("[SYSTEM] Your last response was empty. Please try again. You MUST output a valid bash command inside a ```sh block. Do not repeat the previous command if it was already executed. Original task: $originalTask")
+                                sendToAI("[SYSTEM] Your last response was empty. You MUST output a valid bash command inside a ```sh block. Do not repeat the previous command if it was already executed. Here is the original task: $originalTask")
                             }
                         }, 5000)
                     } else {
@@ -437,22 +436,12 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(fullResponse: String) {
-        var command: String? = null
-        
-        val tripleBacktickRegex = Regex("```(?:bash|sh|shell)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
-        val tripleMatch = tripleBacktickRegex.find(fullResponse)
-        if (tripleMatch != null) {
-            command = tripleMatch.groupValues[1].trim()
-        } else {
-            val singleBacktickRegex = Regex("`([^`]+)`")
-            val singleMatch = singleBacktickRegex.find(fullResponse)
-            if (singleMatch != null) {
-                command = singleMatch.groupValues[1].trim()
-            }
-        }
+        val cleanedResponse = fullResponse.replace("`", "")
+        val codeBlockRegex = Regex("```(?:bash|sh|shell)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
+        var command = codeBlockRegex.find(cleanedResponse)?.groupValues?.get(1)?.trim()
 
         if (command.isNullOrEmpty()) {
-            val lines = fullResponse.lines()
+            val lines = cleanedResponse.lines()
             val commandLines = mutableListOf<String>()
             for (line in lines) {
                 val trimmed = line.trim()
@@ -469,15 +458,10 @@ class AgentActivity : Activity() {
             command = commandLines.joinToString("\n").trim()
         }
 
-        val isTaskComplete = command?.trim() == "TASK_COMPLETE"
-        if (isTaskComplete && !originalTask.contains("Do NOT output TASK_COMPLETE")) {
+        if (fullResponse.contains("TASK_COMPLETE") && (command.isNullOrEmpty() || !command.contains("TASK_COMPLETE"))) {
             log("\n🎉 TASK COMPLETE detected!", Color.GREEN)
             showNotification("Agent Task Complete", "The AI agent has finished the task successfully.")
             updateProgress(100); stopAgent(); return
-        } else if (isTaskComplete && originalTask.contains("Do NOT output TASK_COMPLETE")) {
-            log("⚠️ Ignored TASK_COMPLETE because task is still in progress.", Color.YELLOW)
-            sendToAI("[ERROR] Do NOT output TASK_COMPLETE. The task is not finished. Please proceed with the NEXT step.")
-            return
         }
 
         if (command.isNullOrEmpty()) {
@@ -488,20 +472,6 @@ class AgentActivity : Activity() {
                     sendToAI("[ERROR] Your last response did not contain a bash command. Please try again. You MUST output ONLY the bash command inside the block. Do not include any explanations. Original task: $originalTask")
                 }
             }, 5000)
-            return
-        }
-
-        // ضدعفونی کردن: جلوگیری از نصب پکیج‌های غیرضروری
-        if (command.contains("transformers") || command.contains("torch")) {
-            log("⚠️ Agent tried to install unnecessary packages. IGNORING and moving to next step...", Color.YELLOW)
-            sendToAI("[ERROR] The command contained 'torch' or 'transformers'. These are NOT needed. DO NOT install them. Please proceed with the NEXT step (e.g., install weasyprint and font-noto-naskh-arabic). Original task: $originalTask")
-            return
-        }
-
-        // ضدعفونی کردن: جلوگیری از استفاده مستقیم از pip و venv
-        if (command.contains("pip install") && !command.contains("install_pkg") || command.contains("python3 -m venv")) {
-            log("⚠️ Agent tried to use pip/venv directly. IGNORING and redirecting...", Color.YELLOW)
-            sendToAI("[ERROR] DO NOT use `pip install` or `python3 -m venv` directly. You MUST use `install_pkg <package>` instead. Please retry the step using install_pkg. Original task: $originalTask")
             return
         }
 
