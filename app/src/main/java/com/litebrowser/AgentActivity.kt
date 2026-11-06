@@ -2,6 +2,9 @@ package com.litebrowser
 
 import android.Manifest
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -15,6 +18,8 @@ import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.widget.*
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.termux.terminal.TerminalSession
 import java.io.File
 import kotlin.concurrent.thread
@@ -87,6 +92,42 @@ class AgentActivity : Activity() {
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
             }
+        }
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel("agent_errors", "Agent Errors", NotificationManager.IMPORTANCE_HIGH)
+            channel.description = "Notifications for agent errors and issues"
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun showNotification(title: String, message: String) {
+        try {
+            createNotificationChannel()
+            val intent = Intent(this, AgentActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            val builder = NotificationCompat.Builder(this, "agent_errors")
+                .setSmallIcon(android.R.drawable.stat_notify_error)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                    NotificationManagerCompat.from(this).notify(System.currentTimeMillis().toInt(), builder.build())
+                }
+            } else {
+                NotificationManagerCompat.from(this).notify(System.currentTimeMillis().toInt(), builder.build())
+            }
+        } catch (e: Exception) {
+            Logger.e("Agent", "Failed to show notification", e)
         }
     }
 
@@ -283,17 +324,19 @@ class AgentActivity : Activity() {
 
         val systemPrompt = """
             [INSTRUCTIONS]
-            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single shell command wrapped in \\ blocks.
+            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single shell command wrapped in ```sh and ``` blocks.
             Do NOT explain anything. Do NOT use markdown outside the code block.
             You are running as root in Alpine Linux.
             
             [CRITICAL RULES]
-            - You MUST format your entire response inside the \\ block. 
-            - Use \ instead of \ (bash is not installed).
-            - NEVER use \. 
-            - NEVER use \ for Kotlin files.
-            - To install ANY package, use the smart installer: \ (it auto-updates repositories, tries apk, pip3, and edge/testing).
-            - For Python packages, use:             - To create scripts, use: \ ...             - When the task is completely finished, output ONLY the word \ inside the sh block.
+            - You MUST format your entire response inside the ```sh ... ``` block. 
+            - Use `sh` instead of `bash` (bash is not installed).
+            - NEVER use `apk fetch`. 
+            - NEVER use `cat << EOF` for Kotlin files.
+            - To install ANY package, use the smart installer: `install_pkg <name1> <name2> ...` (it auto-updates repositories, tries apk, pip3, and edge/testing).
+            - For Python packages, use: `install_pkg requests beautifulsoup4`
+            - To create scripts, use: `cat > script.py << 'PYSCRIPT'` ... `PYSCRIPT`
+            - When the task is completely finished, output ONLY the word `TASK_COMPLETE` inside the sh block.
 
             [PROGRESS REPORTING]
             After each major step, on a new line OUTSIDE the code block, write: [PROGRESS: X%]
@@ -301,7 +344,8 @@ class AgentActivity : Activity() {
             If you learn a critical fact, you may include it OUTSIDE the code block like: [NOTE: your important fact here]
 
             [TASK]
-                    """.trimIndent()
+            $prompt
+        """.trimIndent()
 
         sendToAI(systemPrompt)
     }
@@ -328,6 +372,7 @@ class AgentActivity : Activity() {
                     processAiResponse(response.content)
                 } else {
                     log("❌ API Error: ${response.error}", Color.RED)
+                    showNotification("Agent API Error", response.error ?: "Unknown API error occurred.")
                     stopAgent()
                 }
             }
@@ -335,7 +380,7 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(fullResponse: String) {
-        val codeBlockRegex = Regex("\", RegexOption.IGNORE_CASE)
+        val codeBlockRegex = Regex("```(?:bash|sh|shell)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
         var command = codeBlockRegex.find(fullResponse)?.groupValues?.get(1)?.trim()
 
         if (command.isNullOrEmpty()) {
@@ -352,36 +397,36 @@ class AgentActivity : Activity() {
                     commandLines.add(line)
                 }
             }
-            command = commandLines.joinToString("
-").trim()
+            command = commandLines.joinToString("\n").trim()
         }
 
+        if (fullResponse.contains("TASK_COMPLETE") && (command.isNullOrEmpty() || !command.contains("TASK_COMPLETE"))) {
+            log("\n🎉 TASK COMPLETE detected!", Color.GREEN)
+            showNotification("Agent Task Complete", "The AI agent has finished the task successfully.")
             updateProgress(100); stopAgent(); return
         }
 
         if (command.isNullOrEmpty()) {
-            log("⚠️ Could not extract valid command. AI Response: ", Color.YELLOW)
+            log("⚠️ Could not extract valid command. AI Response: $fullResponse", Color.YELLOW)
+            showNotification("Agent Parse Error", "The AI response was not a valid command. Retrying...")
             handler.postDelayed({
                 if (isRunning) {
-                    sendToAI("[ERROR] Your last response did not contain a bash command inside \\ block. Please try again. You must output ONLY the bash command inside the block. Do not include any explanations. Original task: ")
+                    sendToAI("[ERROR] Your last response did not contain a bash command inside ```sh ... ``` block. Please try again. You must output ONLY the bash command inside the block. Do not include any explanations. Original task: $originalTask")
                 }
             }, 5000)
             return
         }
 
-        log("
-💻 Running Command:
-\n", Color.parseColor("#FF9800"))
+        log("\n💻 Running Command:\n$command\n", Color.parseColor("#FF9800"))
         lastExecutedCommand = command
 
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             val scriptFile = File(filesDir, "home/run_agent.sh")
-            scriptFile.writeText(command.replace("", "").trim() + "
-")
+            scriptFile.writeText(command.replace("\r", "").trim() + "\n")
             val startMarker = "___AGENT_START___"
             val endMarker = "___AGENT_END___"
-            session.write("echo "\"; sh /root/run_agent.sh < /dev/null; echo "\"")
+            session.write("echo \"$startMarker\"; sh /root/run_agent.sh < /dev/null; echo \"$endMarker\"\r")
             log("⏳ Executing...", Color.GRAY)
             updateStatus("Starting execution...")
             handler.postDelayed({ readTerminalOutput(startMarker, endMarker, 0) }, 1000)
@@ -421,6 +466,7 @@ class AgentActivity : Activity() {
 
                         if (fullOutputContainsTaskComplete(finalOutput)) {
                             log("\n🎉 TASK COMPLETE detected in output!", Color.GREEN)
+                            showNotification("Agent Task Complete", "The AI agent has finished the task successfully.")
                             updateProgress(100); stopAgent(); return@runOnUiThread
                         }
 
