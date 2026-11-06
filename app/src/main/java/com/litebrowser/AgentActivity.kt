@@ -388,20 +388,22 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(fullResponse: String) {
+        val cleanedResponse = fullResponse.replace("`", "")
         val codeBlockRegex = Regex("```(?:bash|sh|shell)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
-        var command = codeBlockRegex.find(fullResponse)?.groupValues?.get(1)?.trim()
+        var command = codeBlockRegex.find(cleanedResponse)?.groupValues?.get(1)?.trim()
 
         if (command.isNullOrEmpty()) {
-            val lines = fullResponse.lines()
+            val lines = cleanedResponse.lines()
             val commandLines = mutableListOf<String>()
             for (line in lines) {
                 val trimmed = line.trim()
-                if (trimmed.startsWith("[PROGRESS:") || trimmed.startsWith("[NOTE:") || trimmed == "TASK_COMPLETE" || trimmed.startsWith("ERROR:")) continue
-                if (trimmed.startsWith("apk ") || trimmed.startsWith("install_pkg ") || trimmed.startsWith("pip3 ") || 
+                if (trimmed.startsWith("[PROGRESS:") || trimmed.startsWith("[NOTE:") || trimmed == "TASK_COMPLETE" || trimmed.startsWith("ERROR:") || trimmed.startsWith("Step ")) continue
+                if (trimmed.startsWith("apk ") || trimmed.startsWith("install_pkg ") || trimmed.startsWith("pip ") || trimmed.startsWith("pip3 ") || 
                     trimmed.startsWith("mkdir ") || trimmed.startsWith("cd ") || trimmed.startsWith("echo ") || 
                     trimmed.startsWith("python3 ") || trimmed.startsWith("cat ") || trimmed.startsWith("printf ") || 
                     trimmed.startsWith("sed ") || trimmed.startsWith("wget ") || trimmed.startsWith("curl ") || 
-                    trimmed.startsWith("which ") || trimmed.startsWith("chmod ") || trimmed.startsWith("sh ")) {
+                    trimmed.startsWith("which ") || trimmed.startsWith("chmod ") || trimmed.startsWith("sh ") ||
+                    trimmed.startsWith("cd/") || trimmed.startsWith("/")) {
                     commandLines.add(line)
                 }
             }
@@ -419,7 +421,7 @@ class AgentActivity : Activity() {
             showNotification("Agent Parse Error", "The AI response was not a valid command. Retrying...")
             handler.postDelayed({
                 if (isRunning) {
-                    sendToAI("[ERROR] Your last response did not contain a bash command inside ```sh ... ``` block. Please try again. You must output ONLY the bash command inside the block. Do not include any explanations. Original task: $originalTask")
+                    sendToAI("[ERROR] Your last response did not contain a bash command. Please try again. You MUST output ONLY the bash command inside the block. Do not include any explanations. Original task: $originalTask")
                 }
             }, 5000)
             return
