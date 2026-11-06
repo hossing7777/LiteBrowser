@@ -42,10 +42,14 @@ object NativeInstaller {
                 Os.chmod(tallocDest.absolutePath, 493)
             }
 
+            // 🌟 اسکریپت نصب هوشمند با پشتیبانی از کش لوکال
             val smartPkg = File(prefix, "bin/install_pkg")
             smartPkg.writeText("""
                 #!/bin/sh
                 if [ ${'$'}# -eq 0 ]; then echo "Usage: install_pkg <package1> [package2] ..."; exit 1; fi
+                
+                CACHE_DIR="/root/Local_AI_Models/Library_Cache/apk"
+                mkdir -p "${'$'}CACHE_DIR"
                 
                 if [ ! -f /var/cache/apk/.repo_updated ]; then
                     echo "[+] Updating Alpine repositories..."
@@ -70,14 +74,30 @@ object NativeInstaller {
                         continue
                     fi
 
-                    echo "[+] Trying 'apk add ${'$'}PKG' ..."
+                    # 1. بررسی کش لوکال (فایل‌های .apk)
+                    LOCAL_APKS="${'$'}(ls ${'$'}CACHE_DIR/${'$'}PKG-*.apk 2>/dev/null)"
+                    if [ -n "${'$'}LOCAL_APKS" ]; then
+                        echo "[+] Installing '${'$'}PKG' from LOCAL cache..."
+                        apk add --no-cache --allow-untrusted ${'$'}LOCAL_APKS >/dev/null 2>&1
+                        if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed from LOCAL cache."; continue; fi
+                    fi
+
+                    # 2. اگر در کش نبود، از اینترنت دانلود کن
+                    echo "[+] Installing '${'$'}PKG' from INTERNET..."
                     apk add --no-cache "${'$'}PKG" >/dev/null 2>&1
-                    if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via apk."; continue; fi
+                    if [ ${'$'}? -eq 0 ]; then 
+                        echo "[OK] '${'$'}PKG' installed from INTERNET."
+                        # ذخیره فایل‌های نصب شده در کش لوکال برای دفعات بعد
+                        apk fetch --no-network --recursive -o "${'$'}CACHE_DIR" "${'$'}PKG" >/dev/null 2>&1
+                        continue 
+                    fi
                     
+                    # 3. تلاش از مخزن edge
                     echo "[+] Trying 'apk add' from edge/testing..."
                     apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing "${'$'}PKG" >/dev/null 2>&1
                     if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via edge."; continue; fi
 
+                    # 4. تلاش با pip3 (پکیج‌های پایتون)
                     echo "[+] Trying 'pip3 install ${'$'}PKG' ..."
                     pip3 install --break-system-packages "${'$'}PKG" >/dev/null 2>&1
                     if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via pip3."; continue; fi

@@ -5,6 +5,9 @@ import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -73,14 +76,20 @@ class AgentActivity : Activity() {
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
-        // فعال‌سازی انتخاب متن
+        // فعال‌سازی قابلیت کپی و انتخاب متن
         tvLog.setTextIsSelectable(true)
         tvLog.movementMethod = ScrollingMovementMethod()
         tvLog.isFocusable = true
         tvLog.isFocusableInTouchMode = true
         tvLog.isLongClickable = true
+        tvLog.setOnLongClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("Agent Log", tvLog.text.toString())
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(this, "لاگ با موفقیت کپی شد", Toast.LENGTH_SHORT).show()
+            true
+        }
 
-        // راه‌اندازی اولیه مصرف دیتا
         startRx = TrafficStats.getUidRxBytes(Process.myUid())
         startTx = TrafficStats.getUidTxBytes(Process.myUid())
         if (startRx == TrafficStats.UNSUPPORTED.toLong()) startRx = 0L
@@ -117,12 +126,8 @@ class AgentActivity : Activity() {
                 val totalDeltaTx = currentTx - startTx
                 val totalMB = (totalDeltaRx + totalDeltaTx) / (1024.0 * 1024.0)
                 tvDataUsage.text = String.format("Data used: %.2f MB", totalMB)
-                
-                if (currentRx != lastRx || currentTx != lastTx) {
-                    Logger.d("DataUsage", "Rx: $currentRx, Tx: $currentTx")
-                    lastRx = currentRx
-                    lastTx = currentTx
-                }
+                lastRx = currentRx
+                lastTx = currentTx
             }
             handler.postDelayed(this, 2000)
         }
