@@ -45,13 +45,15 @@ object NativeInstaller {
             val smartPkg = File(prefix, "bin/install_pkg")
             smartPkg.writeText("""
                 #!/bin/sh
-                if [ ${'$'}# -eq 0 ]; then echo "Usage: install_pkg <package1> ..."; exit 1; fi
+                if [ ${'$'}# -eq 0 ]; then echo "Usage: install_pkg <package1> [package2] ..."; exit 1; fi
+                
                 if [ ! -f /var/cache/apk/.repo_updated ]; then
                     echo "[+] Updating Alpine repositories..."
-                    apk update
+                    apk update >/dev/null 2>&1
                     mkdir -p /var/cache/apk
                     touch /var/cache/apk/.repo_updated
                 fi
+
                 for PKG in "${'$'}@"; do
                     if command -v "${'$'}PKG" >/dev/null 2>&1; then
                         echo "[OK] '${'$'}PKG' is already installed."
@@ -59,25 +61,28 @@ object NativeInstaller {
                     fi
                     
                     if [ "${'$'}PKG" = "pip" ] || [ "${'$'}PKG" = "py3-pip" ]; then
-                        echo "[+] Installing python3 and pip..."
-                        apk add --no-cache python3 py3-pip
+                        echo "[+] Bootstrapping Python & pip..."
+                        apk add --no-cache python3 py3-pip >/dev/null 2>&1
                         if [ ${'$'}? -ne 0 ]; then
-                            echo "[!] apk install failed, trying ensurepip..."
-                            apk add --no-cache python3
-                            python3 -m ensurepip --upgrade
+                            apk add --no-cache python3 >/dev/null 2>&1
+                            python3 -m ensurepip --upgrade >/dev/null 2>&1
                         fi
                         continue
                     fi
 
                     echo "[+] Trying 'apk add ${'$'}PKG' ..."
-                    apk add --no-cache "${'$'}PKG"
+                    apk add --no-cache "${'$'}PKG" >/dev/null 2>&1
                     if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via apk."; continue; fi
                     
+                    echo "[+] Trying 'apk add' from edge/testing..."
+                    apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing "${'$'}PKG" >/dev/null 2>&1
+                    if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via edge."; continue; fi
+
                     echo "[+] Trying 'pip3 install ${'$'}PKG' ..."
-                    pip3 install --break-system-packages "${'$'}PKG"
+                    pip3 install --break-system-packages "${'$'}PKG" >/dev/null 2>&1
                     if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via pip3."; continue; fi
                     
-                    echo "[ERROR] Failed to install '${'$'}PKG'."
+                    echo "[ERROR] Failed to install '${'$'}PKG' via all methods."
                 done
             """.trimIndent())
             Os.chmod(smartPkg.absolutePath, 493)

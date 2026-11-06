@@ -331,18 +331,16 @@ class AgentActivity : Activity() {
             
             [CRITICAL RULES]
             - You MUST format your entire response inside the ```sh ... ``` block. 
-            - Use `sh` instead of `bash` (bash is not installed).
-            - NEVER use `apk fetch`. 
-            - To install ANY package, use the smart installer: `install_pkg <name1> <name2>` 
-            - For Python packages, use: `install_pkg requests beautifulsoup4`
-            - To create scripts, use: `cat > script.py << 'PYSCRIPT'` ... `PYSCRIPT`
+            - Use `sh` instead of `bash`.
+            - NEVER try to download or install .apk files manually. NEVER use `wget` or `curl` for packages.
+            - To install ANY package (system or python), ONLY use: `install_pkg <name1> <name2>`
+            - For PDF generation, use `weasyprint` (install via `install_pkg weasyprint`).
             - When the task is completely finished, output ONLY the word `TASK_COMPLETE` inside the sh block.
-            - If you are just reporting a milestone and have NO command to run, you MUST output `echo 'Step X Completed'` inside the block. NEVER output plain text outside the block.
+            - If you are just reporting a milestone, output `echo 'Step X Completed'` inside the block.
 
-            [PROGRESS REPORTING]
-            After each major step, on a new line OUTSIDE the code block, write: [PROGRESS: X%]
-            [PERSISTENT MEMORY]
-            If you learn a critical fact, you may include it OUTSIDE the code block like: [NOTE: your important fact here]
+            [AUTO-RECOVERY SYSTEM]
+            If a command fails because a tool is missing (e.g., 'command not found'), DO NOT try to download it manually. Run `install_pkg <toolname>` and then try the original command again.
+            If a Python script fails with 'ModuleNotFoundError', run `install_pkg <module_name>` and try again.
 
             [TASK]
             $prompt
@@ -480,8 +478,24 @@ class AgentActivity : Activity() {
                             updateProgress(100); stopAgent(); return@runOnUiThread
                         }
 
+                        var autoFixHint = ""
+                        if (finalOutput.contains("not found") && !finalOutput.contains("install_pkg")) {
+                            val missingTool = Regex("([a-zA-Z0-9_\\-]+): not found").find(finalOutput)?.groupValues?.get(1)
+                            if (missingTool != null) {
+                                autoFixHint = "\n[AUTO-FIX] The tool '$missingTool' is missing. You MUST run 'install_pkg $missingTool' first, then retry the command."
+                                log("🔧 Auto-fix detected missing tool: $missingTool", Color.MAGENTA)
+                            }
+                        } else if (finalOutput.contains("ModuleNotFoundError: No module named")) {
+                            val missingModule = Regex("No module named '([^']+)'").find(finalOutput)?.groupValues?.get(1)
+                            if (missingModule != null) {
+                                autoFixHint = "\n[AUTO-FIX] Python module '$missingModule' is missing. You MUST run 'install_pkg $missingModule' first, then retry the script."
+                                log("🔧 Auto-fix detected missing module: $missingModule", Color.MAGENTA)
+                            }
+                        }
+
                         val nextPrompt = buildMemoryContext() +
-                            "\n[COMMAND OUTPUT TO ANALYZE]\n$finalOutput\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
+                            "\n[COMMAND OUTPUT TO ANALYZE]\n$finalOutput$autoFixHint\n\nWhat is the next command? (Or reply TASK_COMPLETE if done)"
+                        
                         log("⏳ Waiting 10s to avoid rate limit...", Color.GRAY)
                         handler.postDelayed({ if (isRunning) sendToAI(nextPrompt) }, 10000)
                     }
