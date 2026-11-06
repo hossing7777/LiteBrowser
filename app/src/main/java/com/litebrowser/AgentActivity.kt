@@ -350,6 +350,8 @@ class AgentActivity : Activity() {
         sendToAI(systemPrompt)
     }
 
+    private var aiRetryCount = 0
+
     private fun sendToAI(text: String) {
         log("📤 Sending prompt to Hormouz API...", Color.BLUE)
         updateDataUsage()
@@ -366,14 +368,24 @@ class AgentActivity : Activity() {
             val messages = listOf(HormouzClient.Message("user", text))
             val response = HormouzClient.sendRequest(apiKey, model, messages)
             runOnUiThread {
-                if (response.success && response.content != null) {
+                if (response.success && response.content != null && response.content.trim().isNotEmpty()) {
                     log("📥 AI response received.", Color.GREEN)
+                    aiRetryCount = 0 // ریست کردن شمارنده
                     extractAiNotes(response.content)
                     processAiResponse(response.content)
                 } else {
-                    log("❌ API Error: ${response.error}", Color.RED)
-                    showNotification("Agent API Error", response.error ?: "Unknown API error occurred.")
-                    stopAgent()
+                    // اگر پاسخ null یا خالی بود، دوباره تلاش کن
+                    if (aiRetryCount < 3) {
+                        aiRetryCount++
+                        log("⚠️ AI returned empty response (null). Retrying ($aiRetryCount/3)...", Color.YELLOW)
+                        showNotification("Agent Retrying", "AI returned null. Retrying automatically ($aiRetryCount/3)...")
+                        handler.postDelayed({ if (isRunning) sendToAI(text) }, 5000)
+                    } else {
+                        aiRetryCount = 0
+                        log("❌ AI failed to respond after 3 attempts. Stopping.", Color.RED)
+                        showNotification("Agent API Error", "AI returned null 3 times. Please check your API key or network.")
+                        stopAgent()
+                    }
                 }
             }
         }
