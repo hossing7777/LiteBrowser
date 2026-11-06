@@ -5,6 +5,9 @@ import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -15,6 +18,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import android.text.SpannableStringBuilder
+import android.text.method.ScrollingMovementMethod
 import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.widget.*
@@ -44,6 +48,8 @@ class AgentActivity : Activity() {
     private var lastStatusLine = ""
     private var startRx = 0L
     private var startTx = 0L
+    private var lastRx = 0L
+    private var lastTx = 0L
     private val agentMemoryFile by lazy { File(filesDir, "home/agent_memory.txt") }
     private val recentSteps = mutableListOf<Pair<String, String>>()
     private val aiNotes = mutableListOf<String>()
@@ -70,6 +76,18 @@ class AgentActivity : Activity() {
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
+        // ۴. قابلیت انتخاب و کپی کردن متن لاگ
+        tvLog.setTextIsSelectable(true)
+        tvLog.movementMethod = ScrollingMovementMethod()
+
+        // ۱. راه‌اندازی اولیه مصرف دیتا
+        startRx = TrafficStats.getUidRxBytes(Process.myUid())
+        startTx = TrafficStats.getUidTxBytes(Process.myUid())
+        if (startRx == TrafficStats.UNSUPPORTED.toLong()) startRx = 0L
+        if (startTx == TrafficStats.UNSUPPORTED.toLong()) startTx = 0L
+        lastRx = startRx
+        lastTx = startTx
+
         requestNotificationPermission()
         btnToggleView.setOnClickListener { toggleLogView() }
         btnHistory.setOnClickListener { startActivity(Intent(this, ChatHistoryActivity::class.java)) }
@@ -86,6 +104,31 @@ class AgentActivity : Activity() {
             else Toast.makeText(this, "لطفا یک درخواست وارد کنید", Toast.LENGTH_SHORT).show()
         }
         btnStop.setOnClickListener { stopAgent() }
+
+        // شروع آپدیت خودکار مصرف دیتا
+        handler.post(dataUsageUpdater)
+    }
+
+    // ۱. آپدیت زنده و خودکار مصرف دیتا
+    private val dataUsageUpdater = object : Runnable {
+        override fun run() {
+            val currentRx = TrafficStats.getUidRxBytes(Process.myUid())
+            val currentTx = TrafficStats.getUidTxBytes(Process.myUid())
+            if (currentRx != TrafficStats.UNSUPPORTED.toLong() && currentTx != TrafficStats.UNSUPPORTED.toLong()) {
+                val totalDeltaRx = currentRx - startRx
+                val totalDeltaTx = currentTx - startTx
+                val totalMB = (totalDeltaRx + totalDeltaTx) / (1024.0 * 1024.0)
+                tvDataUsage.text = String.format("Data used: %.2f MB", totalMB)
+                
+                // لاگ کردن تغییرات دیتا (برای اطمینان از کارکرد)
+                if (currentRx != lastRx || currentTx != lastTx) {
+                    Logger.d("DataUsage", "Rx: $currentRx, Tx: $currentTx")
+                    lastRx = currentRx
+                    lastTx = currentTx
+                }
+            }
+            handler.postDelayed(this, 2000)
+        }
     }
 
     private fun requestNotificationPermission() {
@@ -151,6 +194,7 @@ class AgentActivity : Activity() {
             log("\n🛑 Agent stopped by user.", Color.RED)
             updateStatus(""); updateProgress(0); toggleButtons(running = false)
             stopService(Intent(this, AgentForegroundService::class.java))
+            handler.post(dataUsageUpdater)
         }
     }
 
@@ -159,15 +203,6 @@ class AgentActivity : Activity() {
             btnStart.isEnabled = !running
             btnStop.visibility = if (running) View.VISIBLE else View.GONE
             etPrompt.isEnabled = !running
-        }
-    }
-
-    private fun updateDataUsage() {
-        val currentRx = TrafficStats.getUidRxBytes(Process.myUid())
-        val currentTx = TrafficStats.getUidTxBytes(Process.myUid())
-        if (currentRx != TrafficStats.UNSUPPORTED.toLong() && currentTx != TrafficStats.UNSUPPORTED.toLong()) {
-            val totalMB = ((currentRx - startRx) + (currentTx - startTx)) / (1024.0 * 1024.0)
-            runOnUiThread { tvDataUsage.text = String.format("Data used: %.2f MB", totalMB) }
         }
     }
 
@@ -218,6 +253,7 @@ class AgentActivity : Activity() {
             if (logBuilder.length > 50000) logBuilder.delete(0, 20000)
             tvLog.text = logBuilder
             scrollLogs.post { scrollLogs.fullScroll(View.FOCUS_DOWN) }
+            Logger.i("AgentLog", msg)
         }
     }
 
@@ -234,6 +270,7 @@ class AgentActivity : Activity() {
         }
     }
 
+    // ۲. به‌روزرسانی نوار پیشرفت
     private fun updateProgress(percent: Int) {
         runOnUiThread {
             layoutProgress.visibility = View.VISIBLE
@@ -284,8 +321,8 @@ class AgentActivity : Activity() {
 
     private fun extractAiNotes(text: String) {
         try {
-            val regex = Regex("\\[NOTE:\\s*([^\\]]+)\\]")
-            regex.findAll(text).forEach { match ->
+            val noteRegex = Regex("\\[NOTE:\\s*([^\\]]+)\\]")
+            noteRegex.findAll(text).forEach { match ->
                 val note = match.groupValues[1].trim()
                 if (note.isNotEmpty() && !aiNotes.contains(note)) {
                     aiNotes.add(note)
@@ -293,7 +330,15 @@ class AgentActivity : Activity() {
                     Logger.i("Agent", "AI note saved: $note")
                 }
             }
-        } catch (e: Exception) {}
+            // ۲. استخراج درصد پیشرفت از پاسخ مدل
+            val progressRegex = Regex("\\[PROGRESS:\\s*(\\d+)%\\]")
+            progressRegex.findAll(text).forEach { match ->
+                val percent = match.groupValues[1].toIntOrNull()
+                if (percent != null) {
+                    updateProgress(percent)
+                }
+            }
+        } catch (e: Exception) { Logger.e("Agent", "extractAiNotes error", e) }
     }
 
     private fun startAgent(prompt: String) {
@@ -308,7 +353,6 @@ class AgentActivity : Activity() {
         startTx = TrafficStats.getUidTxBytes(Process.myUid())
         if (startRx == TrafficStats.UNSUPPORTED.toLong()) startRx = 0L
         if (startTx == TrafficStats.UNSUPPORTED.toLong()) startTx = 0L
-        updateDataUsage()
 
         startForegroundService(Intent(this, AgentForegroundService::class.java))
 
@@ -337,6 +381,7 @@ class AgentActivity : Activity() {
             - For PDF generation, use `weasyprint` (install via `install_pkg weasyprint`).
             - When the task is completely finished, output ONLY the word `TASK_COMPLETE` inside the sh block.
             - If you are just reporting a milestone, output `echo 'Step X Completed'` inside the block.
+            - Be patient, do not output anything outside the block unless it's a PROGRESS or NOTE.
 
             [AUTO-RECOVERY SYSTEM]
             If a command fails because a tool is missing (e.g., 'command not found'), DO NOT try to download it manually. Run `install_pkg <toolname>` and then try the original command again.
@@ -351,7 +396,6 @@ class AgentActivity : Activity() {
 
     private fun sendToAI(text: String) {
         log("📤 Sending prompt to Hormouz API...", Color.BLUE)
-        updateDataUsage()
         val store = Store(this)
         val apiKey = store.hormouzApiKey
         val model = store.hormouzModel
@@ -447,9 +491,17 @@ class AgentActivity : Activity() {
 
     private fun readTerminalOutput(startMarker: String, endMarker: String, attempts: Int) {
         if (!isRunning) return
-        if (attempts > 600) { log("❌ Error: Timed out.", Color.RED); stopAgent(); return }
+        if (attempts > 2400) { 
+            log("❌ Error: Timed out after 20 minutes.", Color.RED)
+            showNotification("Agent Timeout", "The command took too long and was stopped.")
+            stopAgent(); return 
+        }
         val session = TerminalManager.sessions.firstOrNull()
-        if (session == null) { handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 500); return }
+        if (session == null) { 
+            handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 500)
+            return 
+        }
+
         thread {
             val screenText = session.emulator?.screen?.getTranscriptText() ?: ""
             if (screenText.contains(endMarker)) {
@@ -504,6 +556,26 @@ class AgentActivity : Activity() {
                     return@thread
                 }
             }
+            
+            // ۳. نمایش زنده جزئیات در حین اجرا (Live output)
+            // اگر هنوز به endMarker نرسیده‌ایم، آخرین خطوط ترمینال را در لاگ نمایش می‌دهیم
+            val lines = screenText.trim().lines()
+            if (lines.isNotEmpty()) {
+                val lastLine = lines.last().replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "").trim()
+                if (lastLine.isNotEmpty() && lastLine != lastStatusLine) {
+                    runOnUiThread {
+                        updateStatus(lastLine)
+                        // نمایش آنی در لاگ
+                        val logStart = logBuilder.length
+                        logBuilder.append("   ").append(lastLine).append("\n")
+                        logBuilder.setSpan(ForegroundColorSpan(Color.GRAY), logStart, logBuilder.length, 0)
+                        if (logBuilder.length > 50000) logBuilder.delete(0, 20000)
+                        tvLog.text = logBuilder
+                        scrollLogs.post { scrollLogs.fullScroll(View.FOCUS_DOWN) }
+                    }
+                }
+            }
+            
             handler.postDelayed({ readTerminalOutput(startMarker, endMarker, attempts + 1) }, 500)
         }
     }

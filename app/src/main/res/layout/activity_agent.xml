@@ -165,6 +165,7 @@
             android:textColor="#FFFFFF"
             android:fontFamily="monospace"
             android:textSize="11sp"
+            android:textIsSelectable="true"
             android:text="Agent is ready..." />
     </ScrollView>
 
