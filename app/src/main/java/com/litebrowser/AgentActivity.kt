@@ -417,11 +417,10 @@ class AgentActivity : Activity() {
                 } else {
                     if (aiRetryCount < 2) {
                         aiRetryCount++
-                        log("⚠️ AI returned empty response (null). Retrying ($aiRetryCount/2)...", Color.YELLOW)
-                        showNotification("Agent Retrying", "AI returned null. Retrying automatically ($aiRetryCount/2)...")
+                        log("⚠️ AI returned null (server busy). Retrying ($aiRetryCount/2)...", Color.YELLOW)
                         handler.postDelayed({ 
                             if (isRunning) {
-                                sendToAI("[SYSTEM] Your last response was empty. You MUST output a valid bash command inside a ```sh block. Do not repeat the previous command if it was already executed. Here is the original task: $originalTask")
+                                sendToAI("[SYSTEM] The previous step is already DONE. Do NOT repeat the previous command. You must now provide the next command for the next step. If the task is fully finished, output TASK_COMPLETE. Original task: $originalTask")
                             }
                         }, 5000)
                     } else {
