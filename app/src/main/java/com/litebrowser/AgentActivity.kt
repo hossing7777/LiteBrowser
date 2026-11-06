@@ -370,25 +370,26 @@ class AgentActivity : Activity() {
 
         val systemPrompt = """
             [INSTRUCTIONS]
-            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single shell command wrapped in ```sh and ``` blocks.
+            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single shell command wrapped in \`\`\`sh and \`\`\` blocks.
             You are running as root in Alpine Linux.
             
             [CRITICAL RULES]
-            - You MUST format your entire response inside the ```sh ... ``` block. 
-            - Use `sh` instead of `bash`.
-            - NEVER try to download or install .apk files manually. NEVER use `wget` or `curl` for packages.
-            - To install ANY package (system or python), ONLY use: `install_pkg <name1> <name2>`
-            - For PDF generation, use `weasyprint` (install via `install_pkg weasyprint`).
-            - When the task is completely finished, output ONLY the word `TASK_COMPLETE` inside the sh block.
-            - If you are just reporting a milestone, output `echo 'Step X Completed'` inside the block.
-            - Be patient, do not output anything outside the block unless it's a PROGRESS or NOTE.
+            - You MUST format your entire response inside the \`\`\`sh ... \`\`\` block. 
+            - Use \`sh\` instead of \`bash\`.
+            - NEVER try to download or install .apk files manually. NEVER use \`wget\` or \`curl\` for packages.
+            - To install ANY package (system or python), ONLY use: \`install_pkg <name1> <name2>\`
+            - When the task is completely finished, output ONLY the word \`TASK_COMPLETE\` inside the sh block.
+            - If you are just reporting a milestone, output \`echo 'Step X Completed'\` inside the block.
 
-            [AUTO-RECOVERY SYSTEM]
-            If a command fails because a tool is missing (e.g., 'command not found'), DO NOT try to download it manually. Run `install_pkg <toolname>` and then try the original command again.
-            If a Python script fails with 'ModuleNotFoundError', run `install_pkg <module_name>` and try again.
+            [IMPORTANT - NEVER USE VENV OR PIP DIRECTLY]
+            NEVER use \`python3 -m venv\` or \`pip install\` directly. 
+            The folder /root/Download is a FUSE mount and does NOT allow creating symlinks like 'lib64'. 
+            You MUST use ONLY \`install_pkg\` for ALL packages (including weasyprint, requests, etc.).
+            The \`install_pkg\` script handles pip3 internally with --break-system-packages.
+            If a Python module is missing, run \`install_pkg <module_name>\` and try again.
 
             [TASK]
-            $prompt
+            \$prompt
         """.trimIndent()
 
         sendToAI(systemPrompt)
@@ -417,11 +418,10 @@ class AgentActivity : Activity() {
                 } else {
                     if (aiRetryCount < 2) {
                         aiRetryCount++
-                        log("⚠️ AI returned empty response (null). Retrying ($aiRetryCount/2)...", Color.YELLOW)
-                        showNotification("Agent Retrying", "AI returned null. Retrying automatically ($aiRetryCount/2)...")
+                        log("⚠️ AI returned null (server busy). Retrying ($aiRetryCount/2)...", Color.YELLOW)
                         handler.postDelayed({ 
                             if (isRunning) {
-                                sendToAI("[SYSTEM] Your last response was empty. You MUST output a valid bash command inside a ```sh block. Do not repeat the previous command if it was already executed. Here is the original task: $originalTask")
+                                sendToAI("[SYSTEM] The previous step is already DONE. Do NOT repeat the previous command. You must now provide the next command for the next step. If the task is fully finished, output TASK_COMPLETE. Original task: $originalTask")
                             }
                         }, 5000)
                     } else {
