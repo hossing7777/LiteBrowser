@@ -6,7 +6,6 @@
     android:padding="8dp"
     android:background="#F5F5F5">
 
-    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -62,7 +61,6 @@
             android:textColor="#FFFFFF" />
     </LinearLayout>
 
-    <!-- Prompt Input -->
     <EditText
         android:id="@+id/et_agent_prompt"
         android:layout_width="match_parent"
@@ -78,7 +76,6 @@
         android:textSize="12sp"
         android:layout_marginBottom="4dp"/>
 
-    <!-- Control Buttons -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -107,7 +104,6 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- Progress Bar & Status -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -148,7 +144,6 @@
         android:layout_marginBottom="2dp"
         android:visibility="gone" />
 
-    <!-- Log View -->
     <ScrollView
         android:id="@+id/scroll_logs"
         android:layout_width="match_parent"
@@ -156,7 +151,8 @@
         android:layout_weight="1"
         android:background="#1E1E1E"
         android:padding="6dp"
-        android:layout_marginBottom="4dp">
+        android:layout_marginBottom="4dp"
+        android:fillViewport="true">
 
         <TextView
             android:id="@+id/tv_agent_log"
@@ -166,6 +162,10 @@
             android:fontFamily="monospace"
             android:textSize="11sp"
             android:textIsSelectable="true"
+            android:scrollbars="vertical"
+            android:longClickable="true"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
             android:text="Agent is ready..." />
     </ScrollView>
 

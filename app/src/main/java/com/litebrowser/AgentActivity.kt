@@ -5,9 +5,6 @@ import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -76,11 +73,14 @@ class AgentActivity : Activity() {
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
-        // ۴. قابلیت انتخاب و کپی کردن متن لاگ
+        // فعال‌سازی انتخاب متن
         tvLog.setTextIsSelectable(true)
         tvLog.movementMethod = ScrollingMovementMethod()
+        tvLog.isFocusable = true
+        tvLog.isFocusableInTouchMode = true
+        tvLog.isLongClickable = true
 
-        // ۱. راه‌اندازی اولیه مصرف دیتا
+        // راه‌اندازی اولیه مصرف دیتا
         startRx = TrafficStats.getUidRxBytes(Process.myUid())
         startTx = TrafficStats.getUidTxBytes(Process.myUid())
         if (startRx == TrafficStats.UNSUPPORTED.toLong()) startRx = 0L
@@ -105,11 +105,9 @@ class AgentActivity : Activity() {
         }
         btnStop.setOnClickListener { stopAgent() }
 
-        // شروع آپدیت خودکار مصرف دیتا
         handler.post(dataUsageUpdater)
     }
 
-    // ۱. آپدیت زنده و خودکار مصرف دیتا
     private val dataUsageUpdater = object : Runnable {
         override fun run() {
             val currentRx = TrafficStats.getUidRxBytes(Process.myUid())
@@ -120,7 +118,6 @@ class AgentActivity : Activity() {
                 val totalMB = (totalDeltaRx + totalDeltaTx) / (1024.0 * 1024.0)
                 tvDataUsage.text = String.format("Data used: %.2f MB", totalMB)
                 
-                // لاگ کردن تغییرات دیتا (برای اطمینان از کارکرد)
                 if (currentRx != lastRx || currentTx != lastTx) {
                     Logger.d("DataUsage", "Rx: $currentRx, Tx: $currentTx")
                     lastRx = currentRx
@@ -270,7 +267,6 @@ class AgentActivity : Activity() {
         }
     }
 
-    // ۲. به‌روزرسانی نوار پیشرفت
     private fun updateProgress(percent: Int) {
         runOnUiThread {
             layoutProgress.visibility = View.VISIBLE
@@ -330,7 +326,6 @@ class AgentActivity : Activity() {
                     Logger.i("Agent", "AI note saved: $note")
                 }
             }
-            // ۲. استخراج درصد پیشرفت از پاسخ مدل
             val progressRegex = Regex("\\[PROGRESS:\\s*(\\d+)%\\]")
             progressRegex.findAll(text).forEach { match ->
                 val percent = match.groupValues[1].toIntOrNull()
@@ -415,15 +410,19 @@ class AgentActivity : Activity() {
                     extractAiNotes(response.content)
                     processAiResponse(response.content)
                 } else {
-                    if (aiRetryCount < 3) {
+                    if (aiRetryCount < 2) {
                         aiRetryCount++
-                        log("⚠️ AI returned empty response (null). Retrying ($aiRetryCount/3)...", Color.YELLOW)
-                        showNotification("Agent Retrying", "AI returned null. Retrying automatically ($aiRetryCount/3)...")
-                        handler.postDelayed({ if (isRunning) sendToAI(text) }, 5000)
+                        log("⚠️ AI returned empty response (null). Retrying ($aiRetryCount/2)...", Color.YELLOW)
+                        showNotification("Agent Retrying", "AI returned null. Retrying automatically ($aiRetryCount/2)...")
+                        handler.postDelayed({ 
+                            if (isRunning) {
+                                sendToAI("[SYSTEM] Your last response was empty. You MUST output a valid bash command inside a ```sh block. Do not repeat the previous command if it was already executed. Here is the original task: $originalTask")
+                            }
+                        }, 5000)
                     } else {
                         aiRetryCount = 0
-                        log("❌ AI failed to respond after 3 attempts. Stopping.", Color.RED)
-                        showNotification("Agent API Error", "AI returned null 3 times. Please check your API key or network.")
+                        log("❌ AI failed to respond after 2 attempts. Stopping.", Color.RED)
+                        showNotification("Agent API Error", "AI returned null twice. Please check your API key or network.")
                         stopAgent()
                     }
                 }
@@ -557,15 +556,12 @@ class AgentActivity : Activity() {
                 }
             }
             
-            // ۳. نمایش زنده جزئیات در حین اجرا (Live output)
-            // اگر هنوز به endMarker نرسیده‌ایم، آخرین خطوط ترمینال را در لاگ نمایش می‌دهیم
             val lines = screenText.trim().lines()
             if (lines.isNotEmpty()) {
                 val lastLine = lines.last().replace(Regex("\u001B\\[[0-9;]*[a-zA-Z]"), "").trim()
                 if (lastLine.isNotEmpty() && lastLine != lastStatusLine) {
                     runOnUiThread {
                         updateStatus(lastLine)
-                        // نمایش آنی در لاگ
                         val logStart = logBuilder.length
                         logBuilder.append("   ").append(lastLine).append("\n")
                         logBuilder.setSpan(ForegroundColorSpan(Color.GRAY), logStart, logBuilder.length, 0)
