@@ -48,8 +48,6 @@ class AgentActivity : Activity() {
     private var lastStatusLine = ""
     private var startRx = 0L
     private var startTx = 0L
-    private var lastRx = 0L
-    private var lastTx = 0L
     private val agentMemoryFile by lazy { File(filesDir, "home/agent_memory.txt") }
     private val recentSteps = mutableListOf<Pair<String, String>>()
     private val aiNotes = mutableListOf<String>()
@@ -76,7 +74,6 @@ class AgentActivity : Activity() {
         pbTaskProgress = findViewById(R.id.pb_task_progress)
         tvProgressPercent = findViewById(R.id.tv_progress_percent)
 
-        // فعال‌سازی قابلیت کپی و انتخاب متن
         tvLog.setTextIsSelectable(true)
         tvLog.movementMethod = ScrollingMovementMethod()
         tvLog.isFocusable = true
@@ -94,8 +91,6 @@ class AgentActivity : Activity() {
         startTx = TrafficStats.getUidTxBytes(Process.myUid())
         if (startRx == TrafficStats.UNSUPPORTED.toLong()) startRx = 0L
         if (startTx == TrafficStats.UNSUPPORTED.toLong()) startTx = 0L
-        lastRx = startRx
-        lastTx = startTx
 
         requestNotificationPermission()
         btnToggleView.setOnClickListener { toggleLogView() }
@@ -126,8 +121,6 @@ class AgentActivity : Activity() {
                 val totalDeltaTx = currentTx - startTx
                 val totalMB = (totalDeltaRx + totalDeltaTx) / (1024.0 * 1024.0)
                 tvDataUsage.text = String.format("Data used: %.2f MB", totalMB)
-                lastRx = currentRx
-                lastTx = currentTx
             }
             handler.postDelayed(this, 2000)
         }
@@ -381,7 +374,7 @@ class AgentActivity : Activity() {
             - For PDF generation, use `weasyprint` (install via `install_pkg weasyprint`).
             - When the task is completely finished, output ONLY the word `TASK_COMPLETE` inside the sh block.
             - If you are just reporting a milestone, output `echo 'Step X Completed'` inside the block.
-            - Be patient, do not output anything outside the block unless it's a PROGRESS or NOTE.
+            - Do NOT install packages that are not needed (like transformers, torch).
 
             [AUTO-RECOVERY SYSTEM]
             If a command fails because a tool is missing (e.g., 'command not found'), DO NOT try to download it manually. Run `install_pkg <toolname>` and then try the original command again.
@@ -435,11 +428,24 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(fullResponse: String) {
-        // 1. استخراج محتوای بلوک کد
-        val codeBlockRegex = Regex("```(?:bash|sh|shell)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
-        var command = codeBlockRegex.find(fullResponse)?.groupValues?.get(1)?.trim()
+        // 1. استخراج محتوای بلوک کد (پشتیبانی از ```sh, ```, ```bash)
+        var command: String? = null
+        
+        // تلاش با سه بک‌تیک
+        val tripleBacktickRegex = Regex("```(?:bash|sh|shell)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
+        val tripleMatch = tripleBacktickRegex.find(fullResponse)
+        if (tripleMatch != null) {
+            command = tripleMatch.groupValues[1].trim()
+        } else {
+            // تلاش با یک بک‌تیک (مثل `pip install ...`)
+            val singleBacktickRegex = Regex("`([^`]+)`")
+            val singleMatch = singleBacktickRegex.find(fullResponse)
+            if (singleMatch != null) {
+                command = singleMatch.groupValues[1].trim()
+            }
+        }
 
-        // 2. اگر بلوک کد پیدا نشد، خط به خط بگرد
+        // 2. اگر بلاک کد پیدا نشد، خط به خط بگرد
         if (command.isNullOrEmpty()) {
             val lines = fullResponse.lines()
             val commandLines = mutableListOf<String>()
@@ -455,7 +461,6 @@ class AgentActivity : Activity() {
                     commandLines.add(line)
                 }
             }
-            // اتصال خطوط با \n و حفظ ساختار شل
             command = commandLines.joinToString("\n").trim()
         }
 
@@ -476,13 +481,19 @@ class AgentActivity : Activity() {
             return
         }
 
+        // ضدعفونی کردن: جلوگیری از نصب پکیج‌های غیرضروری
+        if (command.contains("transformers") || command.contains("torch")) {
+            log("⚠️ Agent tried to install unnecessary packages. Redirecting...", Color.YELLOW)
+            sendToAI("[ERROR] Do NOT install transformers or torch. They are not needed for this task. Please proceed with the next step.")
+            return
+        }
+
         log("\n💻 Running Command:\n$command\n", Color.parseColor("#FF9800"))
         lastExecutedCommand = command
 
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             val scriptFile = File(filesDir, "home/run_agent.sh")
-            // ذخیره با \n برای جلوگیری از به هم چسبیدن دستورات
             scriptFile.writeText(command.replace("\r", "").trim() + "\n")
             val startMarker = "___AGENT_START___"
             val endMarker = "___AGENT_END___"
