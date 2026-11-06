@@ -420,7 +420,7 @@ class AgentActivity : Activity() {
                         log("⚠️ AI returned null (server busy). Retrying ($aiRetryCount/2)...", Color.YELLOW)
                         handler.postDelayed({ 
                             if (isRunning) {
-                                sendToAI("[SYSTEM] The previous step is already DONE. Do NOT repeat the previous command. You must now provide the next command for the next step. If the task is fully finished, output TASK_COMPLETE. Original task: $originalTask")
+                                sendToAI("[SYSTEM] Your last response was empty. Please try again. You MUST output a valid bash command inside a ```sh block. Do not repeat the previous command if it was already executed. Original task: $originalTask")
                             }
                         }, 5000)
                     } else {
@@ -435,12 +435,13 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(fullResponse: String) {
-        val cleanedResponse = fullResponse.replace("`", "")
+        // 1. استخراج محتوای بلوک کد
         val codeBlockRegex = Regex("```(?:bash|sh|shell)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
-        var command = codeBlockRegex.find(cleanedResponse)?.groupValues?.get(1)?.trim()
+        var command = codeBlockRegex.find(fullResponse)?.groupValues?.get(1)?.trim()
 
+        // 2. اگر بلوک کد پیدا نشد، خط به خط بگرد
         if (command.isNullOrEmpty()) {
-            val lines = cleanedResponse.lines()
+            val lines = fullResponse.lines()
             val commandLines = mutableListOf<String>()
             for (line in lines) {
                 val trimmed = line.trim()
@@ -454,6 +455,7 @@ class AgentActivity : Activity() {
                     commandLines.add(line)
                 }
             }
+            // اتصال خطوط با \n و حفظ ساختار شل
             command = commandLines.joinToString("\n").trim()
         }
 
@@ -480,6 +482,7 @@ class AgentActivity : Activity() {
         val session = TerminalManager.sessions.firstOrNull()
         if (session != null && session.isRunning) {
             val scriptFile = File(filesDir, "home/run_agent.sh")
+            // ذخیره با \n برای جلوگیری از به هم چسبیدن دستورات
             scriptFile.writeText(command.replace("\r", "").trim() + "\n")
             val startMarker = "___AGENT_START___"
             val endMarker = "___AGENT_END___"
