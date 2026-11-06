@@ -48,6 +48,8 @@ class AgentActivity : Activity() {
     private var lastStatusLine = ""
     private var startRx = 0L
     private var startTx = 0L
+    private var lastRx = 0L
+    private var lastTx = 0L
     private val agentMemoryFile by lazy { File(filesDir, "home/agent_memory.txt") }
     private val recentSteps = mutableListOf<Pair<String, String>>()
     private val aiNotes = mutableListOf<String>()
@@ -363,29 +365,32 @@ class AgentActivity : Activity() {
 
         val systemPrompt = """
             [INSTRUCTIONS]
-            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single shell command wrapped in \`\`\`sh and \`\`\` blocks.
+            You are an expert Alpine Linux terminal bot. Your ONLY job is to output a single shell command wrapped in ```sh and ``` blocks.
             You are running as root in Alpine Linux.
             
             [CRITICAL RULES]
-            - You MUST format your entire response inside the \`\`\`sh ... \`\`\` block. 
-            - Use \`sh\` instead of \`bash\`.
-            - NEVER try to download or install .apk files manually. NEVER use \`wget\` or \`curl\` for packages.
-            - To install ANY package (system or python), ONLY use: \`install_pkg <name1> <name2>\`
-            - For PDF generation, use \`weasyprint\` (install via \`install_pkg weasyprint\`).
-            - When the task is completely finished, output ONLY the word \`TASK_COMPLETE\` inside the sh block.
-            - If you are just reporting a milestone, output \`echo 'Step X Completed'\` inside the sh block.
+            - You MUST format your entire response inside the ```sh ... ``` block. 
+            - Use `sh` instead of `bash`.
+            - NEVER try to download or install .apk files manually. NEVER use `wget` or `curl` for packages.
+            - To install ANY package (system or python), ONLY use: `install_pkg <name1> <name2>`
+            - For PDF generation, use `weasyprint` (install via `install_pkg weasyprint`).
+            - When the task is completely finished, output ONLY the word `TASK_COMPLETE` inside the sh block.
+            - If you are just reporting a milestone, output `echo 'Step X Completed'` inside the block.
 
-            [IMPORTANT - DO NOT INSTALL TORCH OR TRANSFORMERS]
-            The tool we are building generates articles by calling a remote API (Hormouz) using the \`requests\` library. 
-            It DOES NOT need \`transformers\`, \`torch\`, or any other local LLM library. 
-            DO NOT install \`torch\` or \`transformers\`. The ONLY packages needed are: \`python3\`, \`py3-pip\`, \`weasyprint\`, \`requests\`, \`font-noto-naskh-arabic\`.
+            [IMPORTANT - DO NOT USE PIP OR VENV DIRECTLY]
+            You MUST use ONLY the `install_pkg` command for ALL packages.
+            NEVER use `pip install` directly (it will fail with externally-managed-environment).
+            NEVER use `python3 -m venv` (it will fail with Permission denied in /root/Download).
+            NEVER install `torch`, `transformers`, or any local LLM libraries.
+            The ONLY packages needed are: `python3`, `py3-pip`, `weasyprint`, `requests`, `font-noto-naskh-arabic`.
+            The `install_pkg` script handles pip3 internally with --break-system-packages.
 
             [AUTO-RECOVERY SYSTEM]
-            If a command fails because a tool is missing (e.g., 'command not found'), DO NOT try to download it manually. Run \`install_pkg <toolname>\` and then try the original command again.
-            If a Python script fails with 'ModuleNotFoundError', run \`install_pkg <module_name>\` and try again.
+            If a command fails because a tool is missing (e.g., 'command not found'), DO NOT try to download it manually. Run `install_pkg <toolname>` and then try the original command again.
+            If a Python script fails with 'ModuleNotFoundError', run `install_pkg <module_name>` and try again.
 
             [TASK]
-            \$prompt
+            $prompt
         """.trimIndent()
 
         sendToAI(systemPrompt)
@@ -432,16 +437,13 @@ class AgentActivity : Activity() {
     }
 
     private fun processAiResponse(fullResponse: String) {
-        // 1. استخراج محتوای بلوک کد (پشتیبانی از ```sh, ```, ```bash)
         var command: String? = null
         
-        // تلاش با سه بک‌تیک
         val tripleBacktickRegex = Regex("```(?:bash|sh|shell)?\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
         val tripleMatch = tripleBacktickRegex.find(fullResponse)
         if (tripleMatch != null) {
             command = tripleMatch.groupValues[1].trim()
         } else {
-            // تلاش با یک بک‌تیک (مثل `pip install ...`)
             val singleBacktickRegex = Regex("`([^`]+)`")
             val singleMatch = singleBacktickRegex.find(fullResponse)
             if (singleMatch != null) {
@@ -449,7 +451,6 @@ class AgentActivity : Activity() {
             }
         }
 
-        // 2. اگر بلاک کد پیدا نشد، خط به خط بگرد
         if (command.isNullOrEmpty()) {
             val lines = fullResponse.lines()
             val commandLines = mutableListOf<String>()
@@ -468,7 +469,6 @@ class AgentActivity : Activity() {
             command = commandLines.joinToString("\n").trim()
         }
 
-        // فقط اگر TASK_COMPLETE داخل بلاک شل باشد و کل دستور فقط همان باشد
         val isTaskComplete = command?.trim() == "TASK_COMPLETE"
         if (isTaskComplete && !originalTask.contains("Do NOT output TASK_COMPLETE")) {
             log("\n🎉 TASK COMPLETE detected!", Color.GREEN)
@@ -495,6 +495,13 @@ class AgentActivity : Activity() {
         if (command.contains("transformers") || command.contains("torch")) {
             log("⚠️ Agent tried to install unnecessary packages. IGNORING and moving to next step...", Color.YELLOW)
             sendToAI("[ERROR] The command contained 'torch' or 'transformers'. These are NOT needed. DO NOT install them. Please proceed with the NEXT step (e.g., install weasyprint and font-noto-naskh-arabic). Original task: $originalTask")
+            return
+        }
+
+        // ضدعفونی کردن: جلوگیری از استفاده مستقیم از pip و venv
+        if (command.contains("pip install") && !command.contains("install_pkg") || command.contains("python3 -m venv")) {
+            log("⚠️ Agent tried to use pip/venv directly. IGNORING and redirecting...", Color.YELLOW)
+            sendToAI("[ERROR] DO NOT use `pip install` or `python3 -m venv` directly. You MUST use `install_pkg <package>` instead. Please retry the step using install_pkg. Original task: $originalTask")
             return
         }
 

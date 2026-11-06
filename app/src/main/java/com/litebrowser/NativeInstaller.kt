@@ -62,40 +62,29 @@ object NativeInstaller {
                         echo "[OK] '${'$'}PKG' is already installed."
                         continue
                     fi
+
+                    # 0. نصب پکیج‌های پایتونی با pip3
+                    if echo "${'$'}PKG" | grep -qE "^(py3-|weasyprint|requests|beautifulsoup4|markdown|pandas|openpyxl|lxml|pillow|flask|numpy)"; then
+                        echo "[+] Installing Python package '${'$'}PKG' via pip3..."
+                        pip3 install --break-system-packages "${'$'}PKG"
+                        if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via pip3."; continue; fi
+                    fi
                     
-                    if [ "${'$'}PKG" = "pip" ] || [ "${'$'}PKG" = "py3-pip" ]; then
-                        echo "[+] Bootstrapping Python & pip..."
-                        apk add --no-cache python3 py3-pip >/dev/null 2>&1
-                        if [ ${'$'}? -ne 0 ]; then
-                            apk add --no-cache python3 >/dev/null 2>&1
-                            python3 -m ensurepip --upgrade >/dev/null 2>&1
-                        fi
-                        continue
-                    fi
-
-                    LOCAL_APKS="${'$'}(ls ${'$'}CACHE_DIR/${'$'}PKG-*.apk 2>/dev/null)"
-                    if [ -n "${'$'}LOCAL_APKS" ]; then
-                        echo "[+] Installing '${'$'}PKG' from LOCAL cache..."
-                        apk add --no-cache --allow-untrusted ${'$'}LOCAL_APKS >/dev/null 2>&1
-                        if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed from LOCAL cache."; continue; fi
-                    fi
-
-                    echo "[+] Installing '${'$'}PKG' from INTERNET..."
+                    # 1. نصب با apk از مخزن اصلی
+                    echo "[+] Trying 'apk add ${'$'}PKG' ..."
                     apk add --no-cache "${'$'}PKG" >/dev/null 2>&1
-                    if [ ${'$'}? -eq 0 ]; then 
-                        echo "[OK] '${'$'}PKG' installed from INTERNET."
-                        apk fetch --no-network --recursive -o "${'$'}CACHE_DIR" "${'$'}PKG" >/dev/null 2>&1
-                        continue 
-                    fi
-                    
+                    if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via apk."; continue; fi
+
+                    # 2. نصب از مخزن edge
                     echo "[+] Trying 'apk add' from edge/testing..."
                     apk add --no-cache --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing "${'$'}PKG" >/dev/null 2>&1
                     if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via edge."; continue; fi
 
+                    # 3. نصب با pip3 (برای پکیج‌های پایتونی ناشناخته)
                     echo "[+] Trying 'pip3 install ${'$'}PKG' ..."
                     pip3 install --break-system-packages "${'$'}PKG" >/dev/null 2>&1
                     if [ ${'$'}? -eq 0 ]; then echo "[OK] '${'$'}PKG' installed via pip3."; continue; fi
-                    
+
                     echo "[ERROR] Failed to install '${'$'}PKG' via all methods."
                 done
             """.trimIndent())
